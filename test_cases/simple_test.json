@@ -1,0 +1,37 @@
+{
+  "app_name": "simple_test",
+  "package_name": "com.example.simple_test",
+  "screens": [
+    {
+      "id": "home",
+      "name": "Home",
+      "route": "/",
+      "is_home": true,
+      "components": [
+        {
+          "type": "Scaffold",
+          "children": [
+            {
+              "type": "AppBar",
+              "props": {
+                "title": "Simple App"
+              }
+            },
+            {
+              "type": "Center",
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "text": "Hello Flutter!",
+                    "fontSize": 20
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

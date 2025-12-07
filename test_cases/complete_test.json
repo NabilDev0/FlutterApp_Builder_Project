@@ -1,0 +1,496 @@
+{
+  "app_name": "complete_test",
+  "package_name": "com.example.complete_test",
+  "screens": [
+    {
+      "id": "home",
+      "name": "Home",
+      "route": "/",
+      "is_home": true,
+      "components": [
+        {
+          "type": "Scaffold",
+          "children": [
+            {
+              "type": "AppBar",
+              "props": {
+                "title": "Home Screen",
+                "backgroundColor": "#6200EE",
+                "elevation": 4
+              }
+            },
+            {
+              "type": "Center",
+              "children": [
+                {
+                  "type": "Column",
+                  "props": {
+                    "mainAxisAlignment": "center",
+                    "crossAxisAlignment": "center"
+                  },
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "text": "Welcome to Flutter Builder",
+                        "fontSize": 24,
+                        "color": "#000000",
+                        "fontWeight": "bold"
+                      }
+                    },
+                    {
+                      "type": "SizedBox",
+                      "props": {
+                        "height": 20
+                      }
+                    },
+                    {
+                      "type": "Button",
+                      "props": {
+                        "text": "Go to Profile",
+                        "onPress": "handlePress"
+                      }
+                    },
+                    {
+                      "type": "SizedBox",
+                      "props": {
+                        "height": 10
+                      }
+                    },
+                    {
+                      "type": "Button",
+                      "props": {
+                        "text": "Go to Settings",
+                        "onPress": "handleClick"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "profile",
+      "name": "Profile",
+      "route": "/profile",
+      "is_home": false,
+      "components": [
+        {
+          "type": "Scaffold",
+          "children": [
+            {
+              "type": "AppBar",
+              "props": {
+                "title": "User Profile",
+                "backgroundColor": "#03DAC6"
+              }
+            },
+            {
+              "type": "Padding",
+              "props": {
+                "padding": 16
+              },
+              "children": [
+                {
+                  "type": "Column",
+                  "props": {
+                    "crossAxisAlignment": "start"
+                  },
+                  "children": [
+                    {
+                      "type": "Row",
+                      "props": {
+                        "mainAxisAlignment": "start"
+                      },
+                      "children": [
+                        {
+                          "type": "Icon",
+                          "props": {
+                            "icon": "person",
+                            "size": 80,
+                            "color": "#6200EE"
+                          }
+                        },
+                        {
+                          "type": "SizedBox",
+                          "props": {
+                            "width": 20
+                          }
+                        },
+                        {
+                          "type": "Column",
+                          "props": {
+                            "crossAxisAlignment": "start"
+                          },
+                          "children": [
+                            {
+                              "type": "Text",
+                              "props": {
+                                "text": "User",
+                                "fontSize": 24,
+                                "fontWeight": "bold"
+                              }
+                            },
+                            {
+                              "type": "Text",
+                              "props": {
+                                "text": "User@example.com",
+                                "fontSize": 16,
+                                "color": "#666666"
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "SizedBox",
+                      "props": {
+                        "height": 30
+                      }
+                    },
+                    {
+                      "type": "Card",
+                      "children": [
+                        {
+                          "type": "Padding",
+                          "props": {
+                            "padding": 16
+                          },
+                          "children": [
+                            {
+                              "type": "Column",
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "text": "About Me",
+                                    "fontSize": 18,
+                                    "fontWeight": "bold"
+                                  }
+                                },
+                                {
+                                  "type": "SizedBox",
+                                  "props": {
+                                    "height": 10
+                                  }
+                                },
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "text": "Bla Bla Bla Bla Bla",
+                                    "fontSize": 14
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "settings",
+      "name": "Settings",
+      "route": "/settings",
+      "is_home": false,
+      "components": [
+        {
+          "type": "Scaffold",
+          "children": [
+            {
+              "type": "AppBar",
+              "props": {
+                "title": "Settings"
+              }
+            },
+            {
+              "type": "ListView",
+              "props": {
+                "itemCount": 5
+              },
+              "itemTemplate": {
+                "type": "Card",
+                "children": [
+                  {
+                    "type": "Padding",
+                    "props": {
+                      "padding": 12
+                    },
+                    "children": [
+                      {
+                        "type": "Row",
+                        "props": {
+                          "mainAxisAlignment": "spaceBetween"
+                        },
+                        "children": [
+                          {
+                            "type": "Text",
+                            "props": {
+                              "text": "Setting Item",
+                              "fontSize": 16
+                            }
+                          },
+                          {
+                            "type": "Icon",
+                            "props": {
+                              "icon": "arrow_forward_ios",
+                              "size": 20
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "form",
+      "name": "Form Example",
+      "route": "/form",
+      "is_home": false,
+      "components": [
+        {
+          "type": "Scaffold",
+          "children": [
+            {
+              "type": "AppBar",
+              "props": {
+                "title": "Form Example"
+              }
+            },
+            {
+              "type": "Padding",
+              "props": {
+                "padding": 20
+              },
+              "children": [
+                {
+                  "type": "Column",
+                  "children": [
+                    {
+                      "type": "TextField",
+                      "props": {
+                        "hintText": "Enter your name"
+                      }
+                    },
+                    {
+                      "type": "SizedBox",
+                      "props": {
+                        "height": 15
+                      }
+                    },
+                    {
+                      "type": "TextField",
+                      "props": {
+                        "hintText": "Enter your email"
+                      }
+                    },
+                    {
+                      "type": "SizedBox",
+                      "props": {
+                        "height": 20
+                      }
+                    },
+                    {
+                      "type": "Button",
+                      "props": {
+                        "text": "Submit",
+                        "onPress": "onAction"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "layout",
+      "name": "Layout Test",
+      "route": "/layout",
+      "is_home": false,
+      "components": [
+        {
+          "type": "Scaffold",
+          "children": [
+            {
+              "type": "AppBar",
+              "props": {
+                "title": "Layout Test"
+              }
+            },
+            {
+              "type": "Column",
+              "children": [
+                {
+                  "type": "Container",
+                  "props": {
+                    "backgroundColor": "#FF5722",
+                    "padding": 20
+                  },
+                  "layout": {
+                    "w": 10,
+                    "h": 2
+                  },
+                  "children": [
+                    {
+                      "type": "Text",
+                      "props": {
+                        "text": "Container with Background",
+                        "color": "#FFFFFF",
+                        "fontSize": 18
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "Row",
+                  "props": {
+                    "mainAxisAlignment": "spaceEvenly"
+                  },
+                  "children": [
+                    {
+                      "type": "Expanded",
+                      "children": [
+                        {
+                          "type": "Container",
+                          "props": {
+                            "backgroundColor": "#4CAF50",
+                            "padding": 15,
+                            "margin": 5
+                          },
+                          "children": [
+                            {
+                              "type": "Center",
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "text": "Box 1",
+                                    "color": "#FFFFFF"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "children": [
+                        {
+                          "type": "Container",
+                          "props": {
+                            "backgroundColor": "#2196F3",
+                            "padding": 15,
+                            "margin": 5
+                          },
+                          "children": [
+                            {
+                              "type": "Center",
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "text": "Box 2",
+                                    "color": "#FFFFFF"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "Expanded",
+                      "children": [
+                        {
+                          "type": "Container",
+                          "props": {
+                            "backgroundColor": "#FFC107",
+                            "padding": 15,
+                            "margin": 5
+                          },
+                          "children": [
+                            {
+                              "type": "Center",
+                              "children": [
+                                {
+                                  "type": "Text",
+                                  "props": {
+                                    "text": "Box 3",
+                                    "color": "#000000"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "SizedBox",
+                  "props": {
+                    "height": 20
+                  }
+                },
+                {
+                  "type": "Stack",
+                  "children": [
+                    {
+                      "type": "Container",
+                      "props": {
+                        "backgroundColor": "#9C27B0",
+                        "padding": 40
+                      },
+                      "layout": {
+                        "w": 10,
+                        "h": 3
+                      }
+                    },
+                    {
+                      "type": "Center",
+                      "children": [
+                        {
+                          "type": "Text",
+                          "props": {
+                            "text": "Stacked Text",
+                            "color": "#FFFFFF",
+                            "fontSize": 20,
+                            "fontWeight": "bold"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
