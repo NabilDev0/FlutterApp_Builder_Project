@@ -1,4 +1,5 @@
 from rest_framework import viewsets, status
+from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.http import FileResponse
@@ -196,6 +197,12 @@ class ComponentViewSet(viewsets.ModelViewSet):
 
 class GenerateFlutterView(viewsets.ViewSet):
 
+    @extend_schema(
+        request=GenerateFlutterSerializer,
+        responses={
+            200: {'description': 'A zip file containing the generated Flutter project'}},
+        description="Generate a Flutter project directly from a JSON configuration without saving it to the database."
+    )
     @action(detail=False, methods=['post'])
     def quick_generate(self, request):
         # Generate Flutter project directly from JSON without saving

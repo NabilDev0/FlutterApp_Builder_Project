@@ -75,9 +75,9 @@ class WidgetGenerator:
 
         # Width and Height from layout
         if layout.get('w'):
-            code += f"  width: {layout['w']},\n"
+            code += f"  width: {float(layout['w'])},\n"
         if layout.get('h'):
-            code += f"  height: {layout['h']},\n"
+            code += f"  height: {float(layout['h'])},\n"
 
         # Padding
         if props.get('padding'):
@@ -172,24 +172,109 @@ class WidgetGenerator:
         code += ")"
         return code
 
+    # Action props for the Button widget(Chain action support)
+
     def generate_button(self, data, indent_level=0):
         props = data.get('props', {})
         text = props.get('text', 'Button').replace("'", "\\'")
-        on_press = props.get('onPress', 'handlePress')
-        navigate_to = props.get('navigateTo', None)
+
+        # Get actions list from props
+        actions = props.get('actions', [])
+
+        # Backward compatibility for single action props
+        if not actions:
+            if props.get('navigateTo'):
+                actions.append(
+                    {'type': 'navigate', 'route': props['navigateTo']})
+            if props.get('goBack'):
+                actions.append({'type': 'goBack'})
+            if props.get('showSnackbar'):
+                actions.append({
+                    'type': 'snackbar',
+                    'message': props.get('snackbarMessage', 'Action completed')
+                })
+            if props.get('showDialog'):
+                actions.append({
+                    'type': 'dialog',
+                    'title': props.get('dialogTitle', 'Notification'),
+                    'message': props.get('dialogMessage', 'Message')
+                })
 
         code = "ElevatedButton(\n"
-
-        # Generate proper onPressed handler
-        if navigate_to:
-            code += f"  onPressed: () {{\n"
-            code += f"    Navigator.pushNamed(context, '{navigate_to}');\n"
-            code += f"  }},\n"
+        code += "  onPressed: () {\n"
+        code += f"    debugPrint('Button pressed: {text}');\n"
+        if actions:
+            # Generate the recursive action chain
+            action_chain_code = self.generate_action_chain(
+                actions, indent_level + 2)
+            code += action_chain_code
         else:
-            code += f"  onPressed: {on_press},\n"
+            # Default empty handler
+            code += f"    {props.get('onPress', 'handlePress')}();\n"
 
+        code += "  },\n"
         code += f"  child: Text('{text}'),\n"
         code += ")"
+        return code
+
+    def generate_action_chain(self, actions, indent_level=0):
+        if not actions:
+            return ""
+
+        current_action = actions[0]
+        remaining_actions = actions[1:]
+
+        action_type = current_action.get('type', '')
+        indent = "  " * indent_level
+        code = ""
+
+        if action_type == 'snackbar':
+            message = current_action.get(
+                'message', 'Action completed').replace("'", "\\'")
+            code += f"{indent}ScaffoldMessenger.of(context).showSnackBar(\n"
+            code += f"{indent}  SnackBar(content: Text('{message}')),\n"
+            code += f"{indent});\n"
+            # Snackbars are non-blocking, continue to next action
+            code += self.generate_action_chain(remaining_actions, indent_level)
+
+        elif action_type == 'dialog':
+            title = current_action.get(
+                'title', 'Notification').replace("'", "\\'")
+            message = current_action.get('message', '').replace("'", "\\'")
+
+            code += f"{indent}showDialog(\n"
+            code += f"{indent}  context: context,\n"
+            code += f"{indent}  builder: (context) => AlertDialog(\n"
+            code += f"{indent}    title: Text('{title}'),\n"
+            code += f"{indent}    content: Text('{message}'),\n"
+            code += f"{indent}    actions: [\n"
+            code += f"{indent}      TextButton(\n"
+            code += f"{indent}        onPressed: () {{\n"
+            code += f"{indent}          Navigator.pop(context); // Close dialog\n"
+
+            # NEST remaining actions inside the dialog's OK button
+            if remaining_actions:
+                code += self.generate_action_chain(
+                    remaining_actions, indent_level + 5)
+
+            code += f"{indent}        }},\n"
+            code += f"{indent}        child: Text('OK'),\n"
+            code += f"{indent}      ),\n"
+            code += f"{indent}    ],\n"
+            code += f"{indent}  ),\n"
+            code += f"{indent});\n"
+            # Dialog is blocking, so we STOP here. Remaining actions are nested inside.
+
+        elif action_type == 'navigate':
+            route = current_action.get('route', '/')
+            code += f"{indent}Navigator.pushNamed(context, '{route}');\n"
+            # Navigation is terminal for the current screen, but we can still chain if needed
+            code += self.generate_action_chain(remaining_actions, indent_level)
+
+        elif action_type == 'goBack':
+            code += f"{indent}Navigator.pop(context);\n"
+            code += self.generate_action_chain(remaining_actions, indent_level)
+
         return code
 
     def generate_image(self, data, indent_level=0):
@@ -264,12 +349,9 @@ class WidgetGenerator:
 
         code = "ListView.builder(\n"
         code += f"  itemCount: {item_count},\n"
-        code += f"  itemBuilder: (context, index) {{\n"
-        code += f"    return "
-        template_code = self.generate_widget(item_template, indent_level + 2)
-        code += f"{template_code};\n"
-        code += f"  }},\n"
+        code += f"  itemBuilder: (context, index) => {self.generate_widget(item_template, indent_level + 2)},\n"
         code += ")"
+
         return code
 
     def generate_card(self, data, indent_level=0):

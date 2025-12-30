@@ -104,20 +104,7 @@ class ScreenGenerator:
 """
 
     def generate_action_methods(self):
-        return """  // Action handlers
-  void handlePress() {
-    // TODO: Implement action
-  }
-  
-  void handleClick() {
-    // TODO: Implement action
-  }
-  
-  void onAction() {
-    // TODO: Implement action
-  }
-  
-"""
+        return """"""
 
     # Convert string to PascalCase class name
     def to_class_name(self, name):
