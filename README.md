@@ -343,20 +343,36 @@ The following examples illustrate the usage of the \`props\` field for all 18 su
 }
 ```
 
-#### 5. Button
+#### Button
 
-| Prop           | Type   | Description                                                                                   |
-| :------------- | :----- | :-------------------------------------------------------------------------------------------- |
-| \`text\`       | string | The text displayed on the button.                                                             |
-| \`onPress\`    | string | Function name to call on press (e.g., \`handlePress\`). Ignored if \`navigateTo\` is present. |
-| \`navigateTo\` | string | Route path to navigate to (e.g., \`/profile\`).                                               |
+| Prop      | Type   | Description                                   |
+| --------- | ------ | --------------------------------------------- |
+| `text`    | string | The text displayed on the button.             |
+| `actions` | array  | A list of action objects to execute in order. |
+
+#### Button Action Types
+
+| Type       | Config Parameters  | Description                                                      |
+| ---------- | ------------------ | ---------------------------------------------------------------- |
+| `snackbar` | `message`          | Shows a non-blocking snackbar message.                           |
+| `dialog`   | `title`, `message` | Shows a blocking alert dialog. Subsequent actions wait for "OK". |
+| `navigate` | `route`            | Navigates to a new screen.                                       |
+| `goBack`   | None               | Navigates back to the previous screen.                           |
 
 ```json
 {
   "type": "Button",
   "props": {
-    "text": "Go to Next Screen",
-    "navigateTo": "/profile"
+    "text": "Complete Profile",
+    "actions": [
+      { "type": "snackbar", "message": "Saving data..." },
+      {
+        "type": "dialog",
+        "title": "Success",
+        "message": "Your profile has been updated."
+      },
+      { "type": "navigate", "route": "/profile" }
+    ]
   }
 }
 ```
