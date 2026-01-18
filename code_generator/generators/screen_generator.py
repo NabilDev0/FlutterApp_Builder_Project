@@ -72,21 +72,35 @@ class ScreenGenerator:
                     components = [
                         c for c in components if c.get('type') != 'AppBar']
 
-                code += "      body: "
-
+                # Body
                 if len(components) == 1:
-                    code += self.widget_generator.generate_widget(
-                        components[0])
+                    # If it's a ListView, it should be the body directly and be scrollable
+                    if components[0].get('type') == 'ListView':
+                        # Create a copy to modify for standalone use
+                        lv_data = components[0].copy()
+                        # We need a special version of ListView that IS scrollable for the body
+                        code += "      body: ListView.builder(\n"
+                        code += f"        itemCount: {lv_data.get('props', {}).get('itemCount', 10)},\n"
+                        code += f"        itemBuilder: (context, index) => {self.widget_generator.generate_widget(lv_data.get('itemTemplate', {}), 4)},\n"
+                        code += "      ),\n"
+                    else:
+                        code += "      body: SingleChildScrollView(\n"
+                        code += "        child: " + \
+                            self.widget_generator.generate_widget(
+                                components[0]) + ",\n"
+                        code += "      ),\n"
                 else:
-                    code += "Column(\n"
-                    code += "        children: [\n"
+                    code += "      body: SingleChildScrollView(\n"
+                    code += "        child: Column(\n"
+                    code += "          children: [\n"
                     for comp in components:
-                        code += "          " + \
+                        code += "            " + \
                             self.widget_generator.generate_widget(comp) + ",\n"
-                    code += "        ],\n"
-                    code += "      )"
+                    code += "          ],\n"
+                    code += "        ),\n"
+                    code += "      ),\n"
 
-                code += ",\n    )"
+                code += "    )"
         else:
             # Default empty scaffold
             code += """Scaffold(

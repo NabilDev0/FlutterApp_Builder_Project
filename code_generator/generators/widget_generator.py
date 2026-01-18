@@ -40,7 +40,8 @@ class WidgetGenerator:
 
     def generate_text(self, data, indent_level=0):
         props = data.get('props', {})
-        text = props.get('text', 'Text').replace("'", "\\'")
+        text = props.get('text', 'Text').replace(
+            "'", "\\'").replace('$', '\\$')
 
         code = f"Text(\n"
         code += f"  '{text}',\n"
@@ -121,7 +122,9 @@ class WidgetGenerator:
                     children[0], indent_level + 1)
                 code += f"  child: {child_code},\n"
             else:
+                # Simplified: Just use a Column. Let the screen-level scroll handle it.
                 code += f"  child: Column(\n"
+                code += f"    mainAxisSize: MainAxisSize.min,\n"
                 code += f"    children: [\n"
                 for child in children:
                     child_code = self.generate_widget(child, indent_level + 2)
@@ -136,20 +139,40 @@ class WidgetGenerator:
         props = data.get('props', {})
         children = data.get('children', [])
 
-        code = "Row(\n"
+        # Check if any child is Expanded or Flexible
+        has_flex_child = any(
+            c.get('type') in ['Expanded', 'Flexible'] for c in children)
 
+        # Check if we should auto-wrap Text in Flexible to prevent overflow
+        should_auto_wrap_text = len(children) > 1 and any(
+            c.get('type') == 'Text' for c in children)
+
+        # Base Row code
+        code = "Row(\n"
+        code += "  mainAxisSize: MainAxisSize.min,\n"
         if props.get('mainAxisAlignment'):
             code += f"  mainAxisAlignment: MainAxisAlignment.{props['mainAxisAlignment']},\n"
-
         if props.get('crossAxisAlignment'):
             code += f"  crossAxisAlignment: CrossAxisAlignment.{props['crossAxisAlignment']},\n"
-
         code += f"  children: [\n"
         for child in children:
-            child_code = self.generate_widget(child, indent_level + 2)
-            code += f"    {child_code},\n"
+            if child.get('type') == 'Text' and not has_flex_child:
+                child_code = self.generate_widget(child, indent_level + 3)
+                code += f"    Flexible(child: {child_code}),\n"
+            else:
+                child_code = self.generate_widget(child, indent_level + 2)
+                code += f"    {child_code},\n"
         code += f"  ],\n"
         code += ")"
+
+        # Only wrap in horizontal scroll if it's a simple row with NO flexible children
+        if not (has_flex_child or should_auto_wrap_text):
+            scroll_code = "SingleChildScrollView(\n"
+            scroll_code += "  scrollDirection: Axis.horizontal,\n"
+            scroll_code += f"  child: {code},\n"
+            scroll_code += ")"
+            return scroll_code
+
         return code
 
     def generate_column(self, data, indent_level=0):
@@ -157,13 +180,11 @@ class WidgetGenerator:
         children = data.get('children', [])
 
         code = "Column(\n"
-
+        code += "  mainAxisSize: MainAxisSize.min,\n"
         if props.get('mainAxisAlignment'):
             code += f"  mainAxisAlignment: MainAxisAlignment.{props['mainAxisAlignment']},\n"
-
         if props.get('crossAxisAlignment'):
             code += f"  crossAxisAlignment: CrossAxisAlignment.{props['crossAxisAlignment']},\n"
-
         code += f"  children: [\n"
         for child in children:
             child_code = self.generate_widget(child, indent_level + 2)
@@ -176,7 +197,8 @@ class WidgetGenerator:
 
     def generate_button(self, data, indent_level=0):
         props = data.get('props', {})
-        text = props.get('text', 'Button').replace("'", "\\'")
+        text = props.get('text', 'Button').replace(
+            "'", "\\'").replace('$', '\\$')
 
         # Get actions list from props
         actions = props.get('actions', [])
@@ -184,10 +206,10 @@ class WidgetGenerator:
         # Backward compatibility for single action props
         if not actions:
             if props.get('navigateTo'):
-                actions.append(
-                    {'type': 'navigate', 'route': props['navigateTo']})
-            if props.get('goBack'):
-                actions.append({'type': 'goBack'})
+                actions.append({
+                    'type': 'navigate',
+                    'route': props.get('navigateTo')
+                })
             if props.get('showSnackbar'):
                 actions.append({
                     'type': 'snackbar',
@@ -199,6 +221,10 @@ class WidgetGenerator:
                     'title': props.get('dialogTitle', 'Notification'),
                     'message': props.get('dialogMessage', 'Message')
                 })
+            if props.get('goBack') or props.get('go_back'):
+                actions.append({
+                    'type': 'goBack'
+                })
 
         code = "ElevatedButton(\n"
         code += "  onPressed: () {\n"
@@ -209,8 +235,9 @@ class WidgetGenerator:
                 actions, indent_level + 2)
             code += action_chain_code
         else:
-            # Default empty handler
-            code += f"    {props.get('onPress', 'handlePress')}();\n"
+            # Default empty handler - Use debugPrint instead of calling undefined functions
+            on_press = props.get('onPress', 'handlePress')
+            code += f"    debugPrint('Action: {on_press}');\n"
 
         code += "  },\n"
         code += f"  child: Text('{text}'),\n"
@@ -230,7 +257,7 @@ class WidgetGenerator:
 
         if action_type == 'snackbar':
             message = current_action.get(
-                'message', 'Action completed').replace("'", "\\'")
+                'message', 'Action completed').replace("'", "\\'").replace('$', '\\$')
             code += f"{indent}ScaffoldMessenger.of(context).showSnackBar(\n"
             code += f"{indent}  SnackBar(content: Text('{message}')),\n"
             code += f"{indent});\n"
@@ -239,8 +266,9 @@ class WidgetGenerator:
 
         elif action_type == 'dialog':
             title = current_action.get(
-                'title', 'Notification').replace("'", "\\'")
-            message = current_action.get('message', '').replace("'", "\\'")
+                'title', 'Notification').replace("'", "\\'").replace('$', '\\$')
+            message = current_action.get('message', '').replace(
+                "'", "\\'").replace('$', '\\$')
 
             code += f"{indent}showDialog(\n"
             code += f"{indent}  context: context,\n"
@@ -271,7 +299,7 @@ class WidgetGenerator:
             # Navigation is terminal for the current screen, but we can still chain if needed
             code += self.generate_action_chain(remaining_actions, indent_level)
 
-        elif action_type == 'goBack':
+        elif action_type == 'goBack' or current_action.get('go_back'):
             code += f"{indent}Navigator.pop(context);\n"
             code += self.generate_action_chain(remaining_actions, indent_level)
 
@@ -297,7 +325,8 @@ class WidgetGenerator:
 
     def generate_appbar(self, data, indent_level=0):
         props = data.get('props', {})
-        title = props.get('title', 'App').replace("'", "\\'")
+        title = props.get('title', 'App').replace(
+            "'", "\\'").replace('$', '\\$')
 
         code = "AppBar(\n"
         code += f"  title: Text('{title}'),\n"
@@ -327,16 +356,20 @@ class WidgetGenerator:
 
         # Body
         if children:
-            if len(children) == 1:
+            if len(children) == 1 and children[0].get('type') == 'ListView':
                 body_code = self.generate_widget(children[0], indent_level + 1)
                 code += f"  body: {body_code},\n"
             else:
-                code += f"  body: Column(\n"
-                code += f"    children: [\n"
+                code += f"  body: SingleChildScrollView(\n"
+                code += f"    child: Column(\n"
+                code += f"      mainAxisSize: MainAxisSize.min,\n"
+                code += f"      crossAxisAlignment: CrossAxisAlignment.start,\n"
+                code += f"      children: [\n"
                 for child in children:
-                    child_code = self.generate_widget(child, indent_level + 2)
-                    code += f"      {child_code},\n"
-                code += f"    ],\n"
+                    child_code = self.generate_widget(child, indent_level + 3)
+                    code += f"        {child_code},\n"
+                code += f"      ],\n"
+                code += f"    ),\n"
                 code += f"  ),\n"
 
         code += ")"
@@ -348,6 +381,8 @@ class WidgetGenerator:
         item_count = props.get('itemCount', 10)
 
         code = "ListView.builder(\n"
+        code += "  shrinkWrap: true,\n"
+        code += "  physics: const NeverScrollableScrollPhysics(),\n"
         code += f"  itemCount: {item_count},\n"
         code += f"  itemBuilder: (context, index) => {self.generate_widget(item_template, indent_level + 2)},\n"
         code += ")"
@@ -370,6 +405,7 @@ class WidgetGenerator:
                 code += f"  child: {child_code},\n"
             else:
                 code += f"  child: Column(\n"
+                code += f"    mainAxisSize: MainAxisSize.min,\n"
                 code += f"    children: [\n"
                 for child in children:
                     child_code = self.generate_widget(child, indent_level + 2)
@@ -386,7 +422,7 @@ class WidgetGenerator:
         code = "TextField(\n"
 
         if props.get('hintText'):
-            hint = props['hintText'].replace("'", "\\'")
+            hint = props['hintText'].replace("'", "\\'").replace('$', '\\$')
             code += f"  decoration: InputDecoration(\n"
             code += f"    hintText: '{hint}',\n"
             code += f"  ),\n"
@@ -423,8 +459,20 @@ class WidgetGenerator:
         code += f"  padding: EdgeInsets.all({padding}),\n"
 
         if children:
-            child_code = self.generate_widget(children[0], indent_level + 1)
-            code += f"  child: {child_code},\n"
+            if len(children) == 1:
+                child_code = self.generate_widget(
+                    children[0], indent_level + 1)
+                code += f"  child: {child_code},\n"
+            else:
+                code += f"  child: Column(\n"
+                code += f"    mainAxisSize: MainAxisSize.min,\n"
+                code += f"    crossAxisAlignment: CrossAxisAlignment.start,\n"
+                code += f"    children: [\n"
+                for child in children:
+                    child_code = self.generate_widget(child, indent_level + 3)
+                    code += f"      {child_code},\n"
+                code += f"    ],\n"
+                code += f"  ),\n"
 
         code += ")"
         return code
@@ -435,8 +483,19 @@ class WidgetGenerator:
         code = "Center(\n"
 
         if children:
-            child_code = self.generate_widget(children[0], indent_level + 1)
-            code += f"  child: {child_code},\n"
+            if len(children) == 1:
+                child_code = self.generate_widget(
+                    children[0], indent_level + 1)
+                code += f"  child: {child_code},\n"
+            else:
+                code += f"  child: Column(\n"
+                code += f"    mainAxisSize: MainAxisSize.min,\n"
+                code += f"    children: [\n"
+                for child in children:
+                    child_code = self.generate_widget(child, indent_level + 2)
+                    code += f"      {child_code},\n"
+                code += f"    ],\n"
+                code += f"  ),\n"
 
         code += ")"
         return code
