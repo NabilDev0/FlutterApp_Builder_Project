@@ -51,7 +51,9 @@ class WidgetGenerator:
             style_props.append(f"fontSize: {props['fontSize']}")
         if props.get('color'):
             color = props['color'].lstrip('#')
-            style_props.append(f"color: Color(0xFF{color})")
+            if len(color) == 6:
+                color = 'FF' + color
+            style_props.append(f"color: Color(0x{color})")
         if props.get('fontWeight'):
             style_props.append(f"fontWeight: FontWeight.{props['fontWeight']}")
 
@@ -94,7 +96,9 @@ class WidgetGenerator:
         has_decoration = props.get('borderRadius') or props.get('border')
         if props.get('backgroundColor') and not has_decoration:
             color = props['backgroundColor'].lstrip('#')
-            code += f"  color: Color(0xFF{color}),\n"
+            if len(color) == 6:
+                color = 'FF' + color
+            code += f"  color: Color(0x{color}),\n"
 
         # Decoration (for borders, borderRadius, or backgroundColor with decoration)
         if has_decoration:
@@ -102,7 +106,9 @@ class WidgetGenerator:
 
             if props.get('backgroundColor'):
                 color = props['backgroundColor'].lstrip('#')
-                code += f"    color: Color(0xFF{color}),\n"
+                if len(color) == 6:
+                    color = 'FF' + color
+                code += f"    color: Color(0x{color}),\n"
 
             if props.get('borderRadius'):
                 code += f"    borderRadius: BorderRadius.circular({props['borderRadius']}),\n"
@@ -333,7 +339,9 @@ class WidgetGenerator:
 
         if props.get('backgroundColor'):
             color = props['backgroundColor'].lstrip('#')
-            code += f"  backgroundColor: Color(0xFF{color}),\n"
+            if len(color) == 6:
+                color = 'FF' + color
+            code += f"  backgroundColor: Color(0x{color}),\n"
 
         if props.get('elevation') is not None:
             code += f"  elevation: {props['elevation']},\n"
@@ -442,7 +450,9 @@ class WidgetGenerator:
 
         if props.get('color'):
             color = props['color'].lstrip('#')
-            params.append(f"color: Color(0xFF{color})")
+            if len(color) == 6:
+                color = 'FF' + color
+            params.append(f"color: Color(0x{color})")
 
         if params:
             code += ", " + ", ".join(params)
