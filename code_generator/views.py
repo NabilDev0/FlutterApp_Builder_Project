@@ -281,3 +281,12 @@ class AuthViewSet(viewsets.ViewSet):
                 'user': UserSerializer(user).data
             })
         return Response({'error': 'Invalid Credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def logout(self, request):
+        # Delete the user's token to log them out
+        try:
+            request.user.auth_token.delete()
+            return Response({'message': 'Successfully logged out'}, status=status.HTTP_200_OK)
+        except (AttributeError, Token.DoesNotExist):
+            return Response({'error': 'No active session found'}, status=status.HTTP_400_BAD_REQUEST)
