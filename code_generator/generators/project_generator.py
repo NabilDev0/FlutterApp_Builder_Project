@@ -92,16 +92,7 @@ flutter:
         if not screens or (len(screens) == 1 and not screens[0]):
             screens = [{'name': 'Home', 'is_home': True, 'components': []}]
 
-        # Only import home screen in main.dart to avoid unused import warnings
-        home_screen = next((s for s in screens if s.get(
-            'is_home', False)), screens[0] if screens else {})
-        home_name = self.screen_generator.to_class_name(
-            home_screen.get('name', 'Home'))
-        screen_imports = [
-            f"import 'screens/{home_name.lower()}_screen.dart';"]
-
         main_dart = f"""import 'package:flutter/material.dart';
-{chr(10).join(screen_imports)}
 import 'utils/routes.dart';
 
 void main() {{
@@ -114,6 +105,7 @@ class MyApp extends StatelessWidget {{
   @override
   Widget build(BuildContext context) {{
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'Flutter Demo',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
@@ -138,7 +130,18 @@ class MyApp extends StatelessWidget {{
         # routes.dart
         imports = [
             f"import '../screens/{self.screen_generator.to_class_name(s.get('name', 'Home')).lower()}_screen.dart';" for s in screens]
-        routes = [f"    '{s.get('route', '/' + self.screen_generator.to_class_name(s.get('name', 'Home')).lower())}': (context) => const {self.screen_generator.to_class_name(s.get('name', 'Home'))}Screen()," for s in screens]
+
+        routes = []
+        for s in screens:
+            screen_name = s.get('name', 'Home')
+            class_name = self.screen_generator.to_class_name(screen_name)
+            # Use the route from JSON if provided, otherwise generate one
+            route_path = s.get('route')
+            if not route_path:
+                route_path = '/' + class_name.lower()
+
+            routes.append(
+                f"    '{route_path}': (context) => const {class_name}Screen(),")
 
         routes_dart = f"""import 'package:flutter/material.dart';
 {chr(10).join(imports)}

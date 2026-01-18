@@ -10,55 +10,106 @@ A Django REST API backend that generates complete Flutter mobile applications fr
 
 ## Installation
 
-1. **Clone the repository**
+1.  **Clone the repository**
 
-```bash
-git clone https://github.com/NabilDev0/FlutterApp_Builder_Project.git
-cd flutter_builder_project
-```
+    ```bash
+    git clone https://github.com/NabilDev0/FlutterApp_Builder_Project.git
+    cd flutter_builder_project
+    ```
 
-2. **Create virtual environment**
+2.  **Create virtual environment**
 
-```bash
-python -m venv venv
-#then use this command to activate the env EVERYTIME you open the project
-venv/Scripts/activate
-```
+    ```bash
+    python -m venv venv
+    #then use this command to activate the env EVERYTIME you open the project
+    venv/Scripts/activate
+    ```
 
-3. **Install dependencies**
+3.  **Install dependencies**
 
-```bash
-pip install -r requirements.txt
-```
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-4. **Run migrations**
+4.  **Run migrations**
 
-```bash
-python manage.py migrate
-```
+    ```bash
+    python manage.py migrate
+    ```
 
-5. **Start development server**
+5.  **Start development server**
 
-```bash
-python manage.py runserver
-```
+    ```bash
+    python manage.py runserver
+    ```
 
 The API will be available at `http://localhost:8000/`
 
-Once your Django server is running:
+## API Documentation
 
-## How to use Swagger
+### Swagger UI
 
-```bash
-# Assuming you are in the project directory and have activated your virtual environment
-python manage.py runserver
+The interactive API documentation, powered by Swagger UI, is available at the following URL:
+
+**Swagger UI URL:** `http://localhost:8000/api/swagger/`
+
+Use this interface to explore all available endpoints, view required parameters, and test API calls directly.
+
+### Authentication
+
+The API uses **Token-based Authentication** via Django REST Framework's `TokenAuthentication`. All project management endpoints (`/api/projects/`, `/api/screens/`, etc.) require a valid token.
+
+#### 1. Register a New User
+
+| Method | Endpoint              | Description                                             |
+| :----- | :-------------------- | :------------------------------------------------------ |
+| `POST` | `/api/auth/register/` | Creates a new user and returns an authentication token. |
+
+**Request Body Example:**
+
+```json
+{
+  "username": "testuser",
+  "email": "user@example.com",
+  "password": "strongpassword123"
+}
 ```
 
-You can access the Swagger UI at the following URL in your web browser:
+**Response Body (JSON structure with token):**
 
-**Swagger UI URL:** `http://localhost:8000/api/schema/swagger-ui/`
+```json
+{
+  "token": "a4b5c6d7e8f901234567890abcdef01234567890",
+  "user": {
+    "id": 1,
+    "username": "testuser",
+    "email": "user@example.com"
+  }
+}
+```
 
-## API Documentation
+#### 2. Login and Get Token
+
+| Method | Endpoint           | Description                                            |
+| :----- | :----------------- | :----------------------------------------------------- |
+| `POST` | `/api/auth/login/` | Authenticates a user and returns their existing token. |
+
+**Request Body Example:**
+
+```json
+{
+  "username": "testuser",
+  "password": "strongpassword123"
+}
+```
+
+#### 3. Using the Token
+
+For all authenticated requests, include the token in the `Authorization` header:
+
+```
+Authorization: Token a4b5c6d7e8f901234567890abcdef01234567890
+```
 
 ### Quick Generate (No Database)
 
@@ -111,36 +162,42 @@ Content-Type: application/json
 
 **Response:** ZIP file download containing complete Flutter project
 
-### Save and Generate
+### Save and Generate (Authenticated)
 
-1. **Create Project**
+This flow is for authenticated users to save, manage, and generate projects.
 
-```bash
-POST /api/projects/
-{
-  "name": "My App",
-  "description": "A test application",
-  "json_data": { ... }
-}
-```
+1.  **Create Project**
 
-2. **Generate Flutter Project**
+    ```bash
+    POST /api/projects/
+    Authorization: Token <your_token>
+    {
+      "name": "My App",
+      "description": "A test application",
+      "json_data": { ... }
+    }
+    ```
 
-```bash
-POST /api/projects/{id}/generate/
-```
+2.  **Generate Flutter Project**
 
-3. **Download Generated Project**
+    ```bash
+    POST /api/projects/{id}/generate/
+    Authorization: Token <your_token>
+    ```
 
-```bash
-GET /api/projects/{id}/download/
-```
+3.  **Download Generated Project**
 
-4. **View Generation Logs**
+    ```bash
+    GET /api/projects/{id}/download/
+    Authorization: Token <your_token>
+    ```
 
-```bash
-GET /api/projects/{id}/logs/
-```
+4.  **View Generation Logs**
+
+    ```bash
+    GET /api/projects/{id}/logs/
+    Authorization: Token <your_token>
+    ```
 
 ## Supported Widgets and Props Reference
 
@@ -166,13 +223,13 @@ This section details all supported widgets and their corresponding properties (`
 
 ### Content & Input Widgets
 
-| Widget Type   | Supported Props                                                                                        | Description                                                                                                                                                                                                     |
-| :------------ | :----------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Text**      | `text` (string), `fontSize` (number), `color` (hex color), `fontWeight` (string), `alignment` (string) | Displays a string of text. `fontWeight` values: `normal`, `bold`. `alignment` values: `left`, `right`, `center`, `justify`, `start`, `end`.                                                                     |
-| **Button**    | `text` (string), `onPress` (string), `navigateTo` (string)                                             | An `ElevatedButton`. If `navigateTo` is present, it takes precedence and navigates to the specified route (e.g., `/profile`). Otherwise, it uses the `onPress` string as a function name (e.g., `handlePress`). |
-| **TextField** | `hintText` (string)                                                                                    | A text input field.                                                                                                                                                                                             |
-| **Icon**      | `icon` (string), `size` (number), `color` (hex color)                                                  | Displays a Material Design icon. `icon` should be the icon name (e.g., `person`, `star`, `arrow_forward_ios`).                                                                                                  |
-| **Image**     | `src` (string), `fit` (string)                                                                         | Displays an image. If `src` starts with `http`, it uses `Image.network`. Otherwise, it uses `Image.asset`. `fit` values: `cover`, `contain`, `fill`, `fitWidth`, `fitHeight`, `scaleDown`.                      |
+| Widget Type   | Supported Props                                                                                        | Description                                                                                                                                                                                |
+| :------------ | :----------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Text**      | `text` (string), `fontSize` (number), `color` (hex color), `fontWeight` (string), `alignment` (string) | Displays a string of text. `fontWeight` values: `normal`, `bold`. `alignment` values: `left`, `right`, `center`, `justify`, `start`, `end`.                                                |
+| **Button**    | `text` (string), **`actions` (array)**                                                                 | An `ElevatedButton`. **The `actions` array is the standard for defining button behavior (see Action Chaining below).**                                                                     |
+| **TextField** | `hintText` (string)                                                                                    | A text input field.                                                                                                                                                                        |
+| **Icon**      | `icon` (string), `size` (number), `color` (hex color)                                                  | Displays a Material Design icon. `icon` should be the icon name (e.g., `person`, `star`, `arrow_forward_ios`).                                                                             |
+| **Image**     | `src` (string), `fit` (string)                                                                         | Displays an image. If `src` starts with `http`, it uses `Image.network`. Otherwise, it uses `Image.asset`. `fit` values: `cover`, `contain`, `fill`, `fitWidth`, `fitHeight`, `scaleDown`. |
 
 ## JSON Schema
 
@@ -226,7 +283,12 @@ This section details all supported widgets and their corresponding properties (`
                       "type": "Button",
                       "props": {
                         "text": "Go to Profile",
-                        "navigateTo": "/profile"
+                        "actions": [
+                          {
+                            "type": "navigate",
+                            "route": "/profile"
+                          }
+                        ]
                       }
                     }
                   ]
@@ -242,7 +304,31 @@ This section details all supported widgets and their corresponding properties (`
       "name": "Profile",
       "route": "/profile",
       "is_home": false,
-      "components": [...]
+      "components": [
+        {
+          "type": "Scaffold",
+          "children": [
+            {
+              "type": "AppBar",
+              "props": {
+                "title": "Profile Screen"
+              }
+            },
+            {
+              "type": "Center",
+              "children": [
+                {
+                  "type": "Text",
+                  "props": {
+                    "text": "User Profile Details",
+                    "fontSize": 20
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }
@@ -254,13 +340,13 @@ The following examples illustrate the usage of the \`props\` field for all 18 su
 
 #### 1. Text
 
-| Prop           | Type      | Description                                                                        |
-| :------------- | :-------- | :--------------------------------------------------------------------------------- |
-| \`text\`       | string    | The text content.                                                                  |
-| \`fontSize\`   | number    | The size of the font.                                                              |
-| \`color\`      | hex color | The color of the text (e.g., \`#FF0000\`).                                         |
-| \`fontWeight\` | string    | Font weight (\`normal\` or \`bold\`).                                              |
-| \`alignment\`  | string    | Text alignment (\`left\`, \`right\`, \`center\`, \`justify\`, \`start\`, \`end\`). |
+| Prop         | Type      | Description                                                                                   |
+| :----------- | :-------- | :-------------------------------------------------------------------------------------------- |
+| `text`       | string    | The content of the text widget.                                                               |
+| `fontSize`   | number    | The size of the font.                                                                         |
+| `color`      | hex color | The color of the text (e.g., `#FF0000`).                                                      |
+| `fontWeight` | string    | The weight of the font. Values: `normal`, `bold`.                                             |
+| `alignment`  | string    | How the text should be aligned. Values: `left`, `right`, `center`, `justify`, `start`, `end`. |
 
 ```json
 {
@@ -272,74 +358,6 @@ The following examples illustrate the usage of the \`props\` field for all 18 su
     "fontWeight": "bold",
     "alignment": "center"
   }
-}
-```
-
-#### 2. Container
-
-| Prop                | Type      | Description                              |
-| :------------------ | :-------- | :--------------------------------------- |
-| \`backgroundColor\` | hex color | Background color of the container.       |
-| \`padding\`         | number    | Padding around the child.                |
-| \`margin\`          | number    | Margin around the container.             |
-| \`borderRadius\`    | number    | Corner radius for the container.         |
-| \`border\`          | boolean   | If \`true\`, adds a default grey border. |
-| \`layout.w\`        | number    | Explicit width (optional).               |
-| \`layout.h\`        | number    | Explicit height (optional).              |
-
-```json
-{
-  "type": "Container",
-  "props": {
-    "backgroundColor": "#2196F3",
-    "padding": 16,
-    "margin": 8,
-    "borderRadius": 10,
-    "border": true
-  },
-  "children": [{ "type": "Text", "props": { "text": "Inside Container" } }]
-}
-```
-
-#### 3. Row
-
-| Prop                   | Type   | Description                                                                                                            |
-| :--------------------- | :----- | :--------------------------------------------------------------------------------------------------------------------- |
-| \`mainAxisAlignment\`  | string | Horizontal alignment of children (\`start\`, \`end\`, \`center\`, \`spaceBetween\`, \`spaceAround\`, \`spaceEvenly\`). |
-| \`crossAxisAlignment\` | string | Vertical alignment of children (\`start\`, \`end\`, \`center\`, \`stretch\`, \`baseline\`).                            |
-
-```json
-{
-  "type": "Row",
-  "props": {
-    "mainAxisAlignment": "spaceEvenly",
-    "crossAxisAlignment": "center"
-  },
-  "children": [
-    { "type": "Text", "props": { "text": "Item 1" } },
-    { "type": "Text", "props": { "text": "Item 2" } }
-  ]
-}
-```
-
-#### 4. Column
-
-| Prop                   | Type   | Description                                                                                                          |
-| :--------------------- | :----- | :------------------------------------------------------------------------------------------------------------------- |
-| \`mainAxisAlignment\`  | string | Vertical alignment of children (\`start\`, \`end\`, \`center\`, \`spaceBetween\`, \`spaceAround\`, \`spaceEvenly\`). |
-| \`crossAxisAlignment\` | string | Horizontal alignment of children (\`start\`, \`end\`, \`center\`, \`stretch\`, \`baseline\`).                        |
-
-```json
-{
-  "type": "Column",
-  "props": {
-    "mainAxisAlignment": "start",
-    "crossAxisAlignment": "stretch"
-  },
-  "children": [
-    { "type": "Text", "props": { "text": "Item A" } },
-    { "type": "Text", "props": { "text": "Item B" } }
-  ]
 }
 ```
 
@@ -377,67 +395,185 @@ The following examples illustrate the usage of the \`props\` field for all 18 su
 }
 ```
 
-#### 6. Image
+#### 3. TextField
 
-| Prop    | Type   | Description                                                                                                                      |
-| :------ | :----- | :------------------------------------------------------------------------------------------------------------------------------- |
-| \`src\` | string | URL (for network image) or asset path (for local image).                                                                         |
-| \`fit\` | string | How the image should be inscribed into the space (\`cover\`, \`contain\`, \`fill\`, \`fitWidth\`, \`fitHeight\`, \`scaleDown\`). |
+| Prop       | Type   | Description                              |
+| :--------- | :----- | :--------------------------------------- |
+| `hintText` | string | Placeholder text displayed in the field. |
+
+```json
+{
+  "type": "TextField",
+  "props": {
+    "hintText": "Enter your email"
+  }
+}
+```
+
+#### 4. Icon
+
+| Prop    | Type      | Description                                                    |
+| :------ | :-------- | :------------------------------------------------------------- |
+| `icon`  | string    | The name of the Material Design icon (e.g., `person`, `star`). |
+| `size`  | number    | The size of the icon.                                          |
+| `color` | hex color | The color of the icon.                                         |
+
+```json
+{
+  "type": "Icon",
+  "props": {
+    "icon": "settings",
+    "size": 30,
+    "color": "#000000"
+  }
+}
+```
+
+#### 5. Image
+
+| Prop  | Type   | Description                                                                                                                 |
+| :---- | :----- | :-------------------------------------------------------------------------------------------------------------------------- |
+| `src` | string | The source of the image (URL for network, path for asset).                                                                  |
+| `fit` | string | How the image should be inscribed into the space. Values: `cover`, `contain`, `fill`, `fitWidth`, `fitHeight`, `scaleDown`. |
 
 ```json
 {
   "type": "Image",
   "props": {
-    "src": "https://example.com/image.png",
+    "src": "https://picsum.photos/200/300",
     "fit": "cover"
   }
 }
 ```
 
-#### 7. AppBar
+#### 6. Scaffold
 
-| Prop                | Type      | Description                      |
-| :------------------ | :-------- | :------------------------------- |
-| \`title\`           | string    | The title text for the app bar.  |
-| \`backgroundColor\` | hex color | Background color of the app bar. |
-| \`elevation\`       | number    | Shadow depth below the app bar.  |
-
-```json
-{
-  "type": "AppBar",
-  "props": {
-    "title": "My App Bar",
-    "backgroundColor": "#4CAF50",
-    "elevation": 8
-  }
-}
-```
-
-#### 8. Scaffold
-
-| Prop | Type | Description                                                                |
-| :--- | :--- | :------------------------------------------------------------------------- |
-| None | N/A  | The basic screen structure. Takes \`AppBar\` and body content as children. |
+| Prop | Type | Description                                     |
+| :--- | :--- | :---------------------------------------------- |
+| None | N/A  | Provides the high-level structure for a screen. |
 
 ```json
 {
   "type": "Scaffold",
   "children": [
-    { "type": "AppBar", "props": { "title": "App Title" } },
+    { "type": "AppBar", "props": { "title": "My Screen" } },
     {
       "type": "Center",
-      "children": [{ "type": "Text", "props": { "text": "Body Content" } }]
+      "children": [{ "type": "Text", "props": { "text": "Body" } }]
     }
   ]
 }
 ```
 
-#### 9. ListView
+#### 7. AppBar
 
-| Prop             | Type   | Description                                                        |
-| :--------------- | :----- | :----------------------------------------------------------------- |
-| \`itemCount\`    | number | The number of items to display in the list.                        |
-| \`itemTemplate\` | object | The widget structure for each item (used instead of \`children\`). |
+| Prop              | Type      | Description                                     |
+| :---------------- | :-------- | :---------------------------------------------- |
+| `title`           | string    | The text title of the app bar.                  |
+| `backgroundColor` | hex color | The background color of the app bar.            |
+| `elevation`       | number    | The z-coordinate at which to place the app bar. |
+
+```json
+{
+  "type": "AppBar",
+  "props": {
+    "title": "App Title",
+    "backgroundColor": "#FF5722"
+  }
+}
+```
+
+#### 8. Container
+
+| Prop              | Type      | Description                            |
+| :---------------- | :-------- | :------------------------------------- |
+| `backgroundColor` | hex color | The background color of the container. |
+| `padding`         | number    | Uniform padding around the child.      |
+| `margin`          | number    | Uniform margin around the container.   |
+| `borderRadius`    | number    | Radius for rounded corners.            |
+| `border`          | boolean   | Whether to draw a default grey border. |
+
+```json
+{
+  "type": "Container",
+  "props": {
+    "backgroundColor": "#E0E0E0",
+    "padding": 16,
+    "borderRadius": 8
+  },
+  "children": [{ "type": "Text", "props": { "text": "Box Content" } }]
+}
+```
+
+#### 9. Row
+
+| Prop                 | Type   | Description                                                                                                       |
+| :------------------- | :----- | :---------------------------------------------------------------------------------------------------------------- |
+| `mainAxisAlignment`  | string | Horizontal alignment of children. Values: `start`, `end`, `center`, `spaceBetween`, `spaceAround`, `spaceEvenly`. |
+| `crossAxisAlignment` | string | Vertical alignment of children. Values: `start`, `end`, `center`, `stretch`, `baseline`.                          |
+
+```json
+{
+  "type": "Row",
+  "props": {
+    "mainAxisAlignment": "spaceBetween"
+  },
+  "children": [
+    { "type": "Text", "props": { "text": "Left" } },
+    { "type": "Text", "props": { "text": "Right" } }
+  ]
+}
+```
+
+#### 10. Column
+
+| Prop                 | Type   | Description                                                                                                     |
+| :------------------- | :----- | :-------------------------------------------------------------------------------------------------------------- |
+| `mainAxisAlignment`  | string | Vertical alignment of children. Values: `start`, `end`, `center`, `spaceBetween`, `spaceAround`, `spaceEvenly`. |
+| `crossAxisAlignment` | string | Horizontal alignment of children. Values: `start`, `end`, `center`, `stretch`, `baseline`.                      |
+
+```json
+{
+  "type": "Column",
+  "props": {
+    "crossAxisAlignment": "start"
+  },
+  "children": [
+    { "type": "Text", "props": { "text": "Item 1" } },
+    { "type": "Text", "props": { "text": "Item 2" } }
+  ]
+}
+```
+
+#### 11. Card
+
+| Prop        | Type   | Description                               |
+| :---------- | :----- | :---------------------------------------- |
+| `elevation` | number | The shadow depth of the card (default 1). |
+
+```json
+{
+  "type": "Card",
+  "props": {
+    "elevation": 4
+  },
+  "children": [
+    {
+      "type": "Padding",
+      "props": { "padding": 10 },
+      "children": [{ "type": "Text", "props": { "text": "Card Content" } }]
+    }
+  ]
+}
+```
+
+#### 12. ListView
+
+| Prop        | Type   | Description                                 |
+| :---------- | :----- | :------------------------------------------ |
+| `itemCount` | number | The number of items to display in the list. |
+
+**Note:** `ListView` uses an `itemTemplate` field instead of `children` to define the structure of a single list item, which is then repeated `itemCount` times.
 
 ```json
 {
@@ -452,61 +588,11 @@ The following examples illustrate the usage of the \`props\` field for all 18 su
 }
 ```
 
-#### 10. Card
-
-| Prop          | Type   | Description                |
-| :------------ | :----- | :------------------------- |
-| \`elevation\` | number | Shadow depth for the card. |
-
-```json
-{
-  "type": "Card",
-  "props": {
-    "elevation": 4
-  },
-  "children": [{ "type": "Text", "props": { "text": "Card Content" } }]
-}
-```
-
-#### 11. TextField
-
-| Prop         | Type   | Description                                        |
-| :----------- | :----- | :------------------------------------------------- |
-| \`hintText\` | string | Placeholder text displayed inside the input field. |
-
-```json
-{
-  "type": "TextField",
-  "props": {
-    "hintText": "Enter your name"
-  }
-}
-```
-
-#### 12. Icon
-
-| Prop      | Type      | Description                                          |
-| :-------- | :-------- | :--------------------------------------------------- |
-| \`icon\`  | string    | The Material Icon name (e.g., \`star\`, \`person\`). |
-| \`size\`  | number    | The size of the icon.                                |
-| \`color\` | hex color | The color of the icon.                               |
-
-```json
-{
-  "type": "Icon",
-  "props": {
-    "icon": "star",
-    "size": 30,
-    "color": "#FFC107"
-  }
-}
-```
-
 #### 13. Padding
 
-| Prop        | Type   | Description                                  |
-| :---------- | :----- | :------------------------------------------- |
-| \`padding\` | number | Uniform padding value to apply to the child. |
+| Prop      | Type   | Description                                  |
+| :-------- | :----- | :------------------------------------------- |
+| `padding` | number | Uniform padding value to apply to the child. |
 
 ```json
 {
@@ -553,12 +639,12 @@ The following examples illustrate the usage of the \`props\` field for all 18 su
 
 #### 16. Positioned
 
-| Prop       | Type   | Description                                 |
-| :--------- | :----- | :------------------------------------------ |
-| \`top\`    | number | Distance from the top edge of the Stack.    |
-| \`bottom\` | number | Distance from the bottom edge of the Stack. |
-| \`left\`   | number | Distance from the left edge of the Stack.   |
-| \`right\`  | number | Distance from the right edge of the Stack.  |
+| Prop     | Type   | Description                                 |
+| :------- | :----- | :------------------------------------------ |
+| `top`    | number | Distance from the top edge of the Stack.    |
+| `bottom` | number | Distance from the bottom edge of the Stack. |
+| `left`   | number | Distance from the left edge of the Stack.   |
+| `right`  | number | Distance from the right edge of the Stack.  |
 
 ```json
 {
@@ -573,9 +659,9 @@ The following examples illustrate the usage of the \`props\` field for all 18 su
 
 #### 17. Expanded
 
-| Prop     | Type   | Description                                          |
-| :------- | :----- | :--------------------------------------------------- |
-| \`flex\` | number | The factor by which to expand the child (default 1). |
+| Prop   | Type   | Description                                          |
+| :----- | :----- | :--------------------------------------------------- |
+| `flex` | number | The factor by which to expand the child (default 1). |
 
 ```json
 {
@@ -601,10 +687,10 @@ The following examples illustrate the usage of the \`props\` field for all 18 su
 
 #### 18. SizedBox
 
-| Prop       | Type   | Description                 |
-| :--------- | :----- | :-------------------------- |
-| \`width\`  | number | Explicit width of the box.  |
-| \`height\` | number | Explicit height of the box. |
+| Prop     | Type   | Description                 |
+| :------- | :----- | :-------------------------- |
+| `width`  | number | Explicit width of the box.  |
+| `height` | number | Explicit height of the box. |
 
 ```json
 {

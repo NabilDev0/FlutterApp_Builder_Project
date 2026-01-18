@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
 import uuid
+import os
+from django.conf import settings
 
 # Store user projects
 
@@ -15,7 +17,7 @@ class Project(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
-        User, on_delete=models.CASCADE, null=True, blank=True)
+        User, on_delete=models.CASCADE, related_name='projects')
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     json_data = models.JSONField()  # Store the complete screen structure
@@ -32,6 +34,16 @@ class Project(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.status}"
+
+    def delete(self, *args, **kwargs):
+        # Delete the generated file from storage if it exists
+        if self.generated_file:
+            # self.generated_file.path provides the full absolute path to the file
+            if os.path.isfile(self.generated_file.path):
+                os.remove(self.generated_file.path)
+
+        # Call the parent delete method to remove the record from the database
+        super().delete(*args, **kwargs)
 
 # Store individual screens
 
