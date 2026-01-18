@@ -12,15 +12,25 @@ from .models import Project, Screen, Component, GenerationLog
 from .serializers import (
     ProjectSerializer, ProjectCreateSerializer,
     ScreenSerializer, ComponentSerializer,
-    GenerateFlutterSerializer
+    GenerateFlutterSerializer, LoginSerializer
 )
 from .generators.project_generator import FlutterProjectGenerator
+
+from rest_framework.permissions import IsAuthenticated
+
+from rest_framework.authtoken.models import Token
+from rest_framework.permissions import AllowAny
+from django.contrib.auth import authenticate
+from .serializers import UserSerializer
 
 # API endpoints for managing projects
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
-    queryset = Project.objects.all()
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Project.objects.filter(user=self.request.user)
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -39,12 +49,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(output_serializer.data)
         return Response(output_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
-    # Save project and associate with user if authenticated
+    # Save project and associate with user
     def perform_create(self, serializer):
-        if self.request.user.is_authenticated:
-            serializer.save(user=self.request.user)
-        else:
-            serializer.save()
+        serializer.save(user=self.request.user)
 
     @action(detail=True, methods=['post'])
     def generate(self, request, pk=None):
@@ -165,12 +172,12 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
 
 class ScreenViewSet(viewsets.ModelViewSet):
-    queryset = Screen.objects.all()
+    permission_classes = [IsAuthenticated]
     serializer_class = ScreenSerializer
 
-    # Filter screens by project if provided
+    # Filter screens by project if provided and ensure ownership
     def get_queryset(self):
-        queryset = Screen.objects.all()
+        queryset = Screen.objects.filter(project__user=self.request.user)
         project_id = self.request.query_params.get('project_id')
 
         if project_id:
@@ -243,3 +250,34 @@ class GenerateFlutterView(viewsets.ViewSet):
                 'status': 'error',
                 'message': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AuthViewSet(viewsets.ViewSet):
+    permission_classes = [AllowAny]
+
+    @extend_schema(request=UserSerializer)
+    @action(detail=False, methods=['post'])
+    def register(self, request):
+        serializer = UserSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            token, created = Token.objects.get_or_create(user=user)
+            return Response({
+                'token': token.key,
+                'user': UserSerializer(user).data
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(request=LoginSerializer)
+    @action(detail=False, methods=['post'])
+    def login(self, request):
+        username = request.data.get('username')
+        password = request.data.get('password')
+        user = authenticate(username=username, password=password)
+        if user:
+            token, created = Token.objects.get_or_create(user=user)
+            return Response({
+                'token': token.key,
+                'user': UserSerializer(user).data
+            })
+        return Response({'error': 'Invalid Credentials'}, status=status.HTTP_401_UNAUTHORIZED)
