@@ -51,7 +51,7 @@ class WidgetGenerator:
             style_props.append(f"fontSize: {props['fontSize']}")
         if props.get('color'):
             color = props['color'].lstrip('#')
-            if len(color) == 6:
+            if len(color) == 4:
                 color = 'FF' + color
             style_props.append(f"color: Color(0x{color})")
         if props.get('fontWeight'):
@@ -96,7 +96,7 @@ class WidgetGenerator:
         has_decoration = props.get('borderRadius') or props.get('border')
         if props.get('backgroundColor') and not has_decoration:
             color = props['backgroundColor'].lstrip('#')
-            if len(color) == 6:
+            if len(color) == 4:
                 color = 'FF' + color
             code += f"  color: Color(0x{color}),\n"
 
@@ -106,7 +106,7 @@ class WidgetGenerator:
 
             if props.get('backgroundColor'):
                 color = props['backgroundColor'].lstrip('#')
-                if len(color) == 6:
+                if len(color) == 4:
                     color = 'FF' + color
                 code += f"    color: Color(0x{color}),\n"
 
@@ -339,7 +339,7 @@ class WidgetGenerator:
 
         if props.get('backgroundColor'):
             color = props['backgroundColor'].lstrip('#')
-            if len(color) == 6:
+            if len(color) == 4:
                 color = 'FF' + color
             code += f"  backgroundColor: Color(0x{color}),\n"
 
@@ -450,7 +450,7 @@ class WidgetGenerator:
 
         if props.get('color'):
             color = props['color'].lstrip('#')
-            if len(color) == 6:
+            if len(color) == 4:
                 color = 'FF' + color
             params.append(f"color: Color(0x{color})")
 
