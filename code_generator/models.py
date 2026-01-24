@@ -27,6 +27,9 @@ class Project(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     generated_file = models.FileField(
         upload_to='projects/', null=True, blank=True)
+    apk_file = models.FileField(
+        upload_to='apks/', null=True, blank=True)
+    preview_url = models.URLField(max_length=500, null=True, blank=True)
     error_message = models.TextField(blank=True)
 
     class Meta:
@@ -41,6 +44,11 @@ class Project(models.Model):
             # self.generated_file.path provides the full absolute path to the file
             if os.path.isfile(self.generated_file.path):
                 os.remove(self.generated_file.path)
+        
+        # Delete the APK file if it exists
+        if self.apk_file:
+            if os.path.isfile(self.apk_file.path):
+                os.remove(self.apk_file.path)
 
         # Call the parent delete method to remove the record from the database
         super().delete(*args, **kwargs)
