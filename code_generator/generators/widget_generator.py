@@ -26,6 +26,8 @@ class WidgetGenerator:
             'Positioned': self.generate_positioned,
             'Expanded': self.generate_expanded,
             'SizedBox': self.generate_sizedbox,
+            'BottomNavigationBar': self.generate_bottom_navigation_bar,
+            'Drawer': self.generate_drawer,
         }
 
         generator = generators.get(widget_type, self.generate_unknown)
@@ -213,17 +215,17 @@ class WidgetGenerator:
         bg_color = self._parse_color(props.get('backgroundColor'))
         if bg_color:
             style_parts.append(
-                f"backgroundColor: MaterialStateProperty.all({bg_color})")
+                f"backgroundColor: WidgetStateProperty.all({bg_color})")
         fg_color = self._parse_color(props.get('color'))
         if fg_color:
             style_parts.append(
-                f"foregroundColor: MaterialStateProperty.all({fg_color})")
+                f"foregroundColor: WidgetStateProperty.all({fg_color})")
         if props.get('elevation') is not None:
             style_parts.append(
-                f"elevation: MaterialStateProperty.all({props['elevation']})")
+                f"elevation: WidgetStateProperty.all({props['elevation']})")
         if props.get('borderRadius'):
             style_parts.append(
-                f"shape: MaterialStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular({props['borderRadius']})))")
+                f"shape: WidgetStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular({props['borderRadius']})))")
 
         code = "ElevatedButton(\n"
         if style_parts:
@@ -305,6 +307,16 @@ class WidgetGenerator:
         code = "AppBar(\n"
         code += f"  title: Text('{title}'),\n"
         code += f"  centerTitle: {str(props.get('centerTitle', False)).lower()},\n"
+
+        # back button option
+        if props.get('showBackButton'):
+            code += "  leading: IconButton(\n"
+            code += "    icon: const Icon(Icons.arrow_back),\n"
+            code += "    onPressed: () => Navigator.of(context).pop(),\n"
+            code += "  ),\n"
+        elif props.get('automaticallyImplyLeading') is False:
+            code += "  automaticallyImplyLeading: false,\n"
+
         bg_color = self._parse_color(props.get('backgroundColor'))
         if bg_color:
             code += f"  backgroundColor: {bg_color},\n"
@@ -326,10 +338,128 @@ class WidgetGenerator:
         if bg_color:
             code += f"  backgroundColor: {bg_color},\n"
 
+        # BottomNavigationBar
+        bottom_nav = next((c for c in children if c.get(
+            'type') == 'BottomNavigationBar'), None)
+        if bottom_nav:
+            code += f"  bottomNavigationBar: {self.generate_widget(bottom_nav, indent_level + 1)},\n"
+            children = [c for c in children if c.get(
+                'type') != 'BottomNavigationBar']
+
+        # Drawer
+        drawer = next((c for c in children if c.get('type') == 'Drawer'), None)
+        if drawer:
+            code += f"  drawer: {self.generate_widget(drawer, indent_level + 1)},\n"
+            children = [c for c in children if c.get('type') != 'Drawer']
+
         if children:
             body_child = children[0] if len(children) == 1 else {
                 'type': 'Column', 'children': children, 'props': {'crossAxisAlignment': 'start'}}
             code += f"  body: {self.generate_widget(body_child, indent_level + 1)},\n"
+        code += ")"
+        return code
+
+    def generate_bottom_navigation_bar(self, data, indent_level=0):
+        props = data.get('props', {})
+        items = data.get('items', [])
+
+        code = "BottomNavigationBar(\n"
+
+        if props.get('currentIndex') is not None:
+            code += f"  currentIndex: {props['currentIndex']},\n"
+        if props.get('type'):
+            code += f"  type: BottomNavigationBarType.{props['type']},\n"
+
+        selected_color = self._parse_color(props.get('selectedItemColor'))
+        if selected_color:
+            code += f"  selectedItemColor: {selected_color},\n"
+
+        unselected_color = self._parse_color(props.get('unselectedItemColor'))
+        if unselected_color:
+            code += f"  unselectedItemColor: {unselected_color},\n"
+
+        code += "  onTap: (index) {\n"
+        code += "    debugPrint('BottomNav tap: $index');\n"
+        code += "    switch (index) {\n"
+        for i, item in enumerate(items):
+            route = item.get('route')
+            if route:
+                code += f"      case {i}:\n"
+                code += f"        if (ModalRoute.of(context)?.settings.name != '{route}') {{\n"
+                code += f"          Navigator.pushReplacementNamed(context, '{route}');\n"
+                code += "        }\n"
+                code += "        break;\n"
+        code += "    }\n"
+        code += "  },\n"
+
+        code += "  items: [\n"
+        for item in items:
+            label = item.get('label', 'Item').replace("'", "\\'")
+            icon = item.get('icon', 'home')
+            code += "    BottomNavigationBarItem(\n"
+            code += f"      icon: Icon(Icons.{icon}),\n"
+            code += f"      label: '{label}',\n"
+            code += "    ),\n"
+        code += "  ],\n"
+        code += ")"
+        return code
+
+    def generate_drawer(self, data, indent_level=0):
+        props = data.get('props', {})
+        children = data.get('children', [])
+
+        code = "Drawer(\n"
+
+        # Usually a Drawer contains a ListView
+        code += "  child: ListView(\n"
+        code += "    padding: EdgeInsets.zero,\n"
+        code += "    children: [\n"
+
+        # Handle DrawerHeader if present in props
+        header = props.get('header')
+        if header:
+            title = header.get('title', 'Menu').replace("'", "\\'")
+            subtitle = header.get('subtitle', '').replace("'", "\\'")
+            bg_color = self._parse_color(header.get('backgroundColor'))
+
+            code += "      DrawerHeader(\n"
+            if bg_color:
+                code += f"        decoration: BoxDecoration(color: {bg_color}),\n"
+            code += "        child: Column(\n"
+            code += "          crossAxisAlignment: CrossAxisAlignment.start,\n"
+            code += "          children: [\n"
+            code += f"            Text('{title}', style: TextStyle(color: Colors.white, fontSize: 24)),\n"
+            if subtitle:
+                code += f"            Text('{subtitle}', style: TextStyle(color: Colors.white70)),\n"
+            code += "          ],\n"
+            code += "        ),\n"
+            code += "      ),\n"
+
+        for child in children:
+            # If it's a ListTile-like structure
+            if child.get('type') == 'ListTile':
+                c_props = child.get('props', {})
+                title = c_props.get('title', 'Item').replace("'", "\\'")
+                icon = c_props.get('icon')
+                actions = c_props.get('actions', [])
+
+                code += "      ListTile(\n"
+                if icon:
+                    code += f"        leading: Icon(Icons.{icon}),\n"
+                code += f"        title: Text('{title}'),\n"
+                code += "        onTap: () {\n"
+                code += "          Navigator.pop(context);\n"
+                if actions:
+                    code += self.generate_action_chain(
+                        actions, indent_level + 5)
+                code += "        },\n"
+                code += "      ),\n"
+            else:
+                # Fallback to normal widget generation
+                code += f"      {self.generate_widget(child, indent_level + 3)},\n"
+
+        code += "    ],\n"
+        code += "  ),\n"
         code += ")"
         return code
 
