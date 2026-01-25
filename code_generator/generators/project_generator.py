@@ -24,6 +24,7 @@ class FlutterProjectGenerator:
             self.generate_dart_files(project_path, json_data)
             self.generate_android_official(project_path)
             self.generate_android_icons(project_path)
+            self.generate_web_files(project_path)
             self.generate_config_files(project_path)
             self.generate_test_files(project_path)
 
@@ -37,7 +38,7 @@ class FlutterProjectGenerator:
 
     def create_structure(self, project_path):
         dirs = [
-            'lib', 'lib/screens', 'lib/utils', 'test',
+            'lib', 'lib/screens', 'lib/utils', 'test', 'web',
             'android/app/src/main/kotlin/' +
             self.package_name.replace('.', '/'),
             'android/app/src/main/res/values',
@@ -427,6 +428,48 @@ class MainActivity : FlutterActivity()
             debug_styles, encoding='utf-8')
         (project_path / 'android/app/src/profile/res/values/strings.xml').write_text(
             debug_styles, encoding='utf-8')
+
+    def generate_web_files(self, project_path):
+        index_html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <base href="/">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="{self.app_name}">
+  <title>{self.app_name}</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
+"""
+        (project_path / 'web/index.html').write_text(index_html, encoding='utf-8')
+
+        manifest_json = f"""{{
+    "name": "{self.app_name}",
+    "short_name": "{self.app_name}",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#ffffff",
+    "description": "A new Flutter project.",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {{
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        }}
+    ]
+}}
+"""
+        (project_path / 'web/manifest.json').write_text(manifest_json, encoding='utf-8')
 
     def generate_test_files(self, project_path):
         """Generate test files"""

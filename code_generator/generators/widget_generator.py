@@ -38,6 +38,16 @@ class WidgetGenerator:
         lines = code.split('\n')
         return '\n'.join(spaces + line if line.strip() else line for line in lines)
 
+    def _parse_color(self, color_str):
+        if not color_str:
+            return None
+        color = color_str.lstrip('#')
+        if len(color) == 3:
+            color = ''.join([c*2 for c in color])
+        if len(color) == 6:
+            color = 'FF' + color
+        return f"Color(0x{color})"
+
     def generate_text(self, data, indent_level=0):
         props = data.get('props', {})
         text = props.get('text', 'Text').replace(
@@ -49,13 +59,20 @@ class WidgetGenerator:
         style_props = []
         if props.get('fontSize'):
             style_props.append(f"fontSize: {props['fontSize']}")
-        if props.get('color'):
-            color = props['color'].lstrip('#')
-            if len(color) == 6:
-                color = 'FF' + color
-            style_props.append(f"color: Color(0x{color})")
+
+        color_code = self._parse_color(props.get('color'))
+        if color_code:
+            style_props.append(f"color: {color_code}")
+
         if props.get('fontWeight'):
             style_props.append(f"fontWeight: FontWeight.{props['fontWeight']}")
+        if props.get('fontStyle'):
+            style_props.append(f"fontStyle: FontStyle.{props['fontStyle']}")
+        if props.get('letterSpacing'):
+            style_props.append(f"letterSpacing: {props['letterSpacing']}")
+        if props.get('decoration'):
+            style_props.append(
+                f"decoration: TextDecoration.{props['decoration']}")
 
         if style_props:
             code += f"  style: TextStyle(\n"
@@ -65,6 +82,10 @@ class WidgetGenerator:
 
         if props.get('alignment'):
             code += f"  textAlign: TextAlign.{props['alignment']},\n"
+        if props.get('maxLines'):
+            code += f"  maxLines: {props['maxLines']},\n"
+        if props.get('overflow'):
+            code += f"  overflow: TextOverflow.{props['overflow']},\n"
 
         code += ")"
         return code
@@ -76,59 +97,51 @@ class WidgetGenerator:
 
         code = "Container(\n"
 
-        # Width and Height from layout
         if layout.get('w'):
             code += f"  width: {float(layout['w'])},\n"
         if layout.get('h'):
             code += f"  height: {float(layout['h'])},\n"
 
-        # Padding
+        if props.get('alignment'):
+            code += f"  alignment: Alignment.{props['alignment']},\n"
+
         if props.get('padding'):
             padding = props['padding']
             code += f"  padding: EdgeInsets.all({padding}),\n"
 
-        # Margin
         if props.get('margin'):
             margin = props['margin']
             code += f"  margin: EdgeInsets.all({margin}),\n"
 
-        # Background Color (only if no decoration)
-        has_decoration = props.get('borderRadius') or props.get('border')
-        if props.get('backgroundColor') and not has_decoration:
-            color = props['backgroundColor'].lstrip('#')
-            if len(color) == 6:
-                color = 'FF' + color
-            code += f"  color: Color(0x{color}),\n"
+        has_decoration = any(props.get(k) for k in [
+                             'borderRadius', 'border', 'backgroundColor', 'boxShadow', 'gradient'])
 
-        # Decoration (for borders, borderRadius, or backgroundColor with decoration)
         if has_decoration:
             code += f"  decoration: BoxDecoration(\n"
-
-            if props.get('backgroundColor'):
-                color = props['backgroundColor'].lstrip('#')
-                if len(color) == 6:
-                    color = 'FF' + color
-                code += f"    color: Color(0x{color}),\n"
+            color_code = self._parse_color(props.get('backgroundColor'))
+            if color_code:
+                code += f"    color: {color_code},\n"
 
             if props.get('borderRadius'):
                 code += f"    borderRadius: BorderRadius.circular({props['borderRadius']}),\n"
 
             if props.get('border'):
-                code += f"    border: Border.all(\n"
-                code += f"      color: Colors.grey,\n"
-                code += f"      width: 1,\n"
-                code += f"    ),\n"
+                border_color = self._parse_color(
+                    props.get('borderColor')) or "Colors.grey"
+                border_width = props.get('borderWidth', 1)
+                code += f"    border: Border.all(color: {border_color}, width: {border_width}),\n"
 
             code += f"  ),\n"
+        elif props.get('backgroundColor'):
+            color_code = self._parse_color(props.get('backgroundColor'))
+            code += f"  color: {color_code},\n"
 
-        # Child
         if children:
             if len(children) == 1:
                 child_code = self.generate_widget(
                     children[0], indent_level + 1)
                 code += f"  child: {child_code},\n"
             else:
-                # Simplified: Just use a Column. Let the screen-level scroll handle it.
                 code += f"  child: Column(\n"
                 code += f"    mainAxisSize: MainAxisSize.min,\n"
                 code += f"    children: [\n"
@@ -145,52 +158,18 @@ class WidgetGenerator:
         props = data.get('props', {})
         children = data.get('children', [])
 
-        # Check if any child is Expanded or Flexible
-        has_flex_child = any(
-            c.get('type') in ['Expanded', 'Flexible'] for c in children)
-
-        # Check if we should auto-wrap Text in Flexible to prevent overflow
-        should_auto_wrap_text = len(children) > 1 and any(
-            c.get('type') == 'Text' for c in children)
-
-        # Base Row code
         code = "Row(\n"
-        code += "  mainAxisSize: MainAxisSize.min,\n"
+
+        # In Flutter, Row takes max width by default.
+        # If user explicitly sets mainAxisSize to min, we honor it.
+        main_axis_size = props.get('mainAxisSize', 'max')
+        code += f"  mainAxisSize: MainAxisSize.{main_axis_size},\n"
+
         if props.get('mainAxisAlignment'):
             code += f"  mainAxisAlignment: MainAxisAlignment.{props['mainAxisAlignment']},\n"
         if props.get('crossAxisAlignment'):
             code += f"  crossAxisAlignment: CrossAxisAlignment.{props['crossAxisAlignment']},\n"
-        code += f"  children: [\n"
-        for child in children:
-            if child.get('type') == 'Text' and not has_flex_child:
-                child_code = self.generate_widget(child, indent_level + 3)
-                code += f"    Flexible(child: {child_code}),\n"
-            else:
-                child_code = self.generate_widget(child, indent_level + 2)
-                code += f"    {child_code},\n"
-        code += f"  ],\n"
-        code += ")"
 
-        # Only wrap in horizontal scroll if it's a simple row with NO flexible children
-        if not (has_flex_child or should_auto_wrap_text):
-            scroll_code = "SingleChildScrollView(\n"
-            scroll_code += "  scrollDirection: Axis.horizontal,\n"
-            scroll_code += f"  child: {code},\n"
-            scroll_code += ")"
-            return scroll_code
-
-        return code
-
-    def generate_column(self, data, indent_level=0):
-        props = data.get('props', {})
-        children = data.get('children', [])
-
-        code = "Column(\n"
-        code += "  mainAxisSize: MainAxisSize.min,\n"
-        if props.get('mainAxisAlignment'):
-            code += f"  mainAxisAlignment: MainAxisAlignment.{props['mainAxisAlignment']},\n"
-        if props.get('crossAxisAlignment'):
-            code += f"  crossAxisAlignment: CrossAxisAlignment.{props['crossAxisAlignment']},\n"
         code += f"  children: [\n"
         for child in children:
             child_code = self.generate_widget(child, indent_level + 2)
@@ -199,52 +178,67 @@ class WidgetGenerator:
         code += ")"
         return code
 
-    # Action props for the Button widget(Chain action support)
+    def generate_column(self, data, indent_level=0):
+        props = data.get('props', {})
+        children = data.get('children', [])
+
+        code = "Column(\n"
+
+        # In Flutter, Column takes max height by default.
+        # If user explicitly sets mainAxisSize to min, we honor it.
+        main_axis_size = props.get('mainAxisSize', 'max')
+        code += f"  mainAxisSize: MainAxisSize.{main_axis_size},\n"
+
+        if props.get('mainAxisAlignment'):
+            code += f"  mainAxisAlignment: MainAxisAlignment.{props['mainAxisAlignment']},\n"
+        if props.get('crossAxisAlignment'):
+            code += f"  crossAxisAlignment: CrossAxisAlignment.{props['crossAxisAlignment']},\n"
+
+        code += f"  children: [\n"
+        for child in children:
+            child_code = self.generate_widget(child, indent_level + 2)
+            code += f"    {child_code},\n"
+        code += f"  ],\n"
+        code += ")"
+        return code
 
     def generate_button(self, data, indent_level=0):
         props = data.get('props', {})
         text = props.get('text', 'Button').replace(
             "'", "\\'").replace('$', '\\$')
-
-        # Get actions list from props
         actions = props.get('actions', [])
 
-        # Backward compatibility for single action props
-        if not actions:
-            if props.get('navigateTo'):
-                actions.append({
-                    'type': 'navigate',
-                    'route': props.get('navigateTo')
-                })
-            if props.get('showSnackbar'):
-                actions.append({
-                    'type': 'snackbar',
-                    'message': props.get('snackbarMessage', 'Action completed')
-                })
-            if props.get('showDialog'):
-                actions.append({
-                    'type': 'dialog',
-                    'title': props.get('dialogTitle', 'Notification'),
-                    'message': props.get('dialogMessage', 'Message')
-                })
-            if props.get('goBack') or props.get('go_back'):
-                actions.append({
-                    'type': 'goBack'
-                })
+        # Button Style
+        style_parts = []
+        bg_color = self._parse_color(props.get('backgroundColor'))
+        if bg_color:
+            style_parts.append(
+                f"backgroundColor: MaterialStateProperty.all({bg_color})")
+        fg_color = self._parse_color(props.get('color'))
+        if fg_color:
+            style_parts.append(
+                f"foregroundColor: MaterialStateProperty.all({fg_color})")
+        if props.get('elevation') is not None:
+            style_parts.append(
+                f"elevation: MaterialStateProperty.all({props['elevation']})")
+        if props.get('borderRadius'):
+            style_parts.append(
+                f"shape: MaterialStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular({props['borderRadius']})))")
 
         code = "ElevatedButton(\n"
+        if style_parts:
+            code += "  style: ButtonStyle(\n"
+            for part in style_parts:
+                code += f"    {part},\n"
+            code += "  ),\n"
+
         code += "  onPressed: () {\n"
         code += f"    debugPrint('Button pressed: {text}');\n"
         if actions:
-            # Generate the recursive action chain
-            action_chain_code = self.generate_action_chain(
-                actions, indent_level + 2)
-            code += action_chain_code
+            code += self.generate_action_chain(actions, indent_level + 2)
         else:
-            # Default empty handler - Use debugPrint instead of calling undefined functions
             on_press = props.get('onPress', 'handlePress')
             code += f"    debugPrint('Action: {on_press}');\n"
-
         code += "  },\n"
         code += f"  child: Text('{text}'),\n"
         code += ")"
@@ -253,133 +247,89 @@ class WidgetGenerator:
     def generate_action_chain(self, actions, indent_level=0):
         if not actions:
             return ""
-
         current_action = actions[0]
         remaining_actions = actions[1:]
-
         action_type = current_action.get('type', '')
         indent = "  " * indent_level
         code = ""
 
         if action_type == 'snackbar':
-            message = current_action.get(
-                'message', 'Action completed').replace("'", "\\'").replace('$', '\\$')
-            code += f"{indent}ScaffoldMessenger.of(context).showSnackBar(\n"
-            code += f"{indent}  SnackBar(content: Text('{message}')),\n"
-            code += f"{indent});\n"
-            # Snackbars are non-blocking, continue to next action
+            message = current_action.get('message', 'Action completed').replace(
+                "'", "\\'").replace('$', '\\$')
+            code += f"{indent}ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('{message}')));\n"
             code += self.generate_action_chain(remaining_actions, indent_level)
-
         elif action_type == 'dialog':
-            title = current_action.get(
-                'title', 'Notification').replace("'", "\\'").replace('$', '\\$')
+            title = current_action.get('title', 'Notification').replace(
+                "'", "\\'").replace('$', '\\$')
             message = current_action.get('message', '').replace(
                 "'", "\\'").replace('$', '\\$')
-
-            code += f"{indent}showDialog(\n"
-            code += f"{indent}  context: context,\n"
-            code += f"{indent}  builder: (context) => AlertDialog(\n"
-            code += f"{indent}    title: Text('{title}'),\n"
-            code += f"{indent}    content: Text('{message}'),\n"
-            code += f"{indent}    actions: [\n"
-            code += f"{indent}      TextButton(\n"
-            code += f"{indent}        onPressed: () {{\n"
-            code += f"{indent}          Navigator.pop(context); // Close dialog\n"
-
-            # NEST remaining actions inside the dialog's OK button
+            code += f"{indent}showDialog(context: context, builder: (context) => AlertDialog(\n"
+            code += f"{indent}  title: Text('{title}'), content: Text('{message}'),\n"
+            code += f"{indent}  actions: [TextButton(onPressed: () {{ Navigator.pop(context);\n"
             if remaining_actions:
                 code += self.generate_action_chain(
-                    remaining_actions, indent_level + 5)
-
-            code += f"{indent}        }},\n"
-            code += f"{indent}        child: Text('OK'),\n"
-            code += f"{indent}      ),\n"
-            code += f"{indent}    ],\n"
-            code += f"{indent}  ),\n"
-            code += f"{indent});\n"
-            # Dialog is blocking, so we STOP here. Remaining actions are nested inside.
-
+                    remaining_actions, indent_level + 2)
+            code += f"{indent}  }}, child: Text('OK'))],\n"
+            code += f"{indent}));\n"
         elif action_type == 'navigate':
             route = current_action.get('route', '/')
             code += f"{indent}Navigator.pushNamed(context, '{route}');\n"
-            # Navigation is terminal for the current screen, but we can still chain if needed
             code += self.generate_action_chain(remaining_actions, indent_level)
-
         elif action_type == 'goBack' or current_action.get('go_back'):
             code += f"{indent}Navigator.pop(context);\n"
             code += self.generate_action_chain(remaining_actions, indent_level)
-
         return code
 
     def generate_image(self, data, indent_level=0):
         props = data.get('props', {})
-        src = props.get('src', '')
+        src = props.get('src', 'https://via.placeholder.com/150')
         fit = props.get('fit', 'cover')
+        width = props.get('width')
+        height = props.get('height')
 
-        if src.startswith('http'):
-            code = f"Image.network(\n"
-            code += f"  '{src}',\n"
-            code += f"  fit: BoxFit.{fit},\n"
-            code += ")"
-        else:
-            code = f"Image.asset(\n"
-            code += f"  '{src}',\n"
-            code += f"  fit: BoxFit.{fit},\n"
-            code += ")"
-
+        img_method = "network" if src.startswith('http') else "asset"
+        code = f"Image.{img_method}(\n"
+        code += f"  '{src}',\n"
+        code += f"  fit: BoxFit.{fit},\n"
+        if width:
+            code += f"  width: {width},\n"
+        if height:
+            code += f"  height: {height},\n"
+        code += ")"
         return code
 
     def generate_appbar(self, data, indent_level=0):
         props = data.get('props', {})
         title = props.get('title', 'App').replace(
             "'", "\\'").replace('$', '\\$')
-
         code = "AppBar(\n"
         code += f"  title: Text('{title}'),\n"
-
-        if props.get('backgroundColor'):
-            color = props['backgroundColor'].lstrip('#')
-            if len(color) == 6:
-                color = 'FF' + color
-            code += f"  backgroundColor: Color(0x{color}),\n"
-
+        code += f"  centerTitle: {str(props.get('centerTitle', False)).lower()},\n"
+        bg_color = self._parse_color(props.get('backgroundColor'))
+        if bg_color:
+            code += f"  backgroundColor: {bg_color},\n"
         if props.get('elevation') is not None:
             code += f"  elevation: {props['elevation']},\n"
-
         code += ")"
         return code
 
     def generate_scaffold(self, data, indent_level=0):
         props = data.get('props', {})
         children = data.get('children', [])
-
         code = "Scaffold(\n"
-
-        # Find AppBar in children
         appbar = next((c for c in children if c.get('type') == 'AppBar'), None)
         if appbar:
-            appbar_code = self.generate_widget(appbar, indent_level + 1)
-            code += f"  appBar: {appbar_code},\n"
+            code += f"  appBar: {self.generate_widget(appbar, indent_level + 1)},\n"
             children = [c for c in children if c.get('type') != 'AppBar']
 
-        # Body
-        if children:
-            if len(children) == 1 and children[0].get('type') == 'ListView':
-                body_code = self.generate_widget(children[0], indent_level + 1)
-                code += f"  body: {body_code},\n"
-            else:
-                code += f"  body: SingleChildScrollView(\n"
-                code += f"    child: Column(\n"
-                code += f"      mainAxisSize: MainAxisSize.min,\n"
-                code += f"      crossAxisAlignment: CrossAxisAlignment.start,\n"
-                code += f"      children: [\n"
-                for child in children:
-                    child_code = self.generate_widget(child, indent_level + 3)
-                    code += f"        {child_code},\n"
-                code += f"      ],\n"
-                code += f"    ),\n"
-                code += f"  ),\n"
+        bg_color = self._parse_color(props.get('backgroundColor'))
+        if bg_color:
+            code += f"  backgroundColor: {bg_color},\n"
 
+        if children:
+            body_child = children[0] if len(children) == 1 else {
+                'type': 'Column', 'children': children, 'props': {'crossAxisAlignment': 'start'}}
+            code += f"  body: {self.generate_widget(body_child, indent_level + 1)},\n"
         code += ")"
         return code
 
@@ -387,76 +337,65 @@ class WidgetGenerator:
         props = data.get('props', {})
         item_template = data.get('itemTemplate', {})
         item_count = props.get('itemCount', 10)
-
         code = "ListView.builder(\n"
-        code += "  shrinkWrap: true,\n"
-        code += "  physics: const NeverScrollableScrollPhysics(),\n"
+        code += f"  shrinkWrap: {str(props.get('shrinkWrap', True)).lower()},\n"
+        code += f"  padding: EdgeInsets.all({props.get('padding', 0)}),\n"
         code += f"  itemCount: {item_count},\n"
         code += f"  itemBuilder: (context, index) => {self.generate_widget(item_template, indent_level + 2)},\n"
         code += ")"
-
         return code
 
     def generate_card(self, data, indent_level=0):
-        children = data.get('children', [])
         props = data.get('props', {})
-
+        children = data.get('children', [])
         code = "Card(\n"
-
         if props.get('elevation') is not None:
             code += f"  elevation: {props['elevation']},\n"
+        color = self._parse_color(props.get('color'))
+        if color:
+            code += f"  color: {color},\n"
+        if props.get('margin'):
+            code += f"  margin: EdgeInsets.all({props['margin']}),\n"
+        if props.get('borderRadius'):
+            code += f"  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular({props['borderRadius']})),\n"
 
         if children:
-            if len(children) == 1:
-                child_code = self.generate_widget(
-                    children[0], indent_level + 1)
-                code += f"  child: {child_code},\n"
-            else:
-                code += f"  child: Column(\n"
-                code += f"    mainAxisSize: MainAxisSize.min,\n"
-                code += f"    children: [\n"
-                for child in children:
-                    child_code = self.generate_widget(child, indent_level + 2)
-                    code += f"      {child_code},\n"
-                code += f"    ],\n"
-                code += f"  ),\n"
-
+            child_code = self.generate_widget(children[0] if len(children) == 1 else {
+                                              'type': 'Column', 'children': children}, indent_level + 1)
+            code += f"  child: {child_code},\n"
         code += ")"
         return code
 
     def generate_textfield(self, data, indent_level=0):
         props = data.get('props', {})
-
         code = "TextField(\n"
-
+        code += f"  obscureText: {str(props.get('obscureText', False)).lower()},\n"
+        code += f"  keyboardType: TextInputType.{props.get('keyboardType', 'text')},\n"
+        code += "  decoration: InputDecoration(\n"
         if props.get('hintText'):
-            hint = props['hintText'].replace("'", "\\'").replace('$', '\\$')
-            code += f"  decoration: InputDecoration(\n"
-            code += f"    hintText: '{hint}',\n"
-            code += f"  ),\n"
-
+            code += f"    hintText: '{props['hintText']}',\n"
+        if props.get('labelText'):
+            code += f"    labelText: '{props['labelText']}',\n"
+        if props.get('border'):
+            code += "    border: OutlineInputBorder(),\n"
+        if props.get('prefixIcon'):
+            code += f"    prefixIcon: Icon(Icons.{props['prefixIcon']}),\n"
+        code += "  ),\n"
         code += ")"
         return code
 
     def generate_icon(self, data, indent_level=0):
         props = data.get('props', {})
         icon = props.get('icon', 'star')
-
         code = f"Icon(Icons.{icon}"
-
         params = []
         if props.get('size'):
             params.append(f"size: {props['size']}")
-
-        if props.get('color'):
-            color = props['color'].lstrip('#')
-            if len(color) == 6:
-                color = 'FF' + color
-            params.append(f"color: Color(0x{color})")
-
+        color = self._parse_color(props.get('color'))
+        if color:
+            params.append(f"color: {color}")
         if params:
             code += ", " + ", ".join(params)
-
         code += ")"
         return code
 
@@ -464,118 +403,67 @@ class WidgetGenerator:
         props = data.get('props', {})
         children = data.get('children', [])
         padding = props.get('padding', 8)
-
-        code = f"Padding(\n"
-        code += f"  padding: EdgeInsets.all({padding}),\n"
-
+        code = f"Padding(padding: EdgeInsets.all({padding}),\n"
         if children:
-            if len(children) == 1:
-                child_code = self.generate_widget(
-                    children[0], indent_level + 1)
-                code += f"  child: {child_code},\n"
-            else:
-                code += f"  child: Column(\n"
-                code += f"    mainAxisSize: MainAxisSize.min,\n"
-                code += f"    crossAxisAlignment: CrossAxisAlignment.start,\n"
-                code += f"    children: [\n"
-                for child in children:
-                    child_code = self.generate_widget(child, indent_level + 3)
-                    code += f"      {child_code},\n"
-                code += f"    ],\n"
-                code += f"  ),\n"
-
+            child_code = self.generate_widget(children[0] if len(children) == 1 else {
+                                              'type': 'Column', 'children': children}, indent_level + 1)
+            code += f"  child: {child_code},\n"
         code += ")"
         return code
 
     def generate_center(self, data, indent_level=0):
         children = data.get('children', [])
-
         code = "Center(\n"
-
         if children:
-            if len(children) == 1:
-                child_code = self.generate_widget(
-                    children[0], indent_level + 1)
-                code += f"  child: {child_code},\n"
-            else:
-                code += f"  child: Column(\n"
-                code += f"    mainAxisSize: MainAxisSize.min,\n"
-                code += f"    children: [\n"
-                for child in children:
-                    child_code = self.generate_widget(child, indent_level + 2)
-                    code += f"      {child_code},\n"
-                code += f"    ],\n"
-                code += f"  ),\n"
-
+            child_code = self.generate_widget(children[0] if len(children) == 1 else {
+                                              'type': 'Column', 'children': children}, indent_level + 1)
+            code += f"  child: {child_code},\n"
         code += ")"
         return code
 
     def generate_stack(self, data, indent_level=0):
         children = data.get('children', [])
-
         code = "Stack(\n"
-        code += f"  children: [\n"
+        code += "  children: [\n"
         for child in children:
-            child_code = self.generate_widget(child, indent_level + 2)
-            code += f"    {child_code},\n"
-        code += f"  ],\n"
+            code += f"    {self.generate_widget(child, indent_level + 2)},\n"
+        code += "  ],\n"
         code += ")"
         return code
 
     def generate_positioned(self, data, indent_level=0):
         props = data.get('props', {})
         children = data.get('children', [])
-
         code = "Positioned(\n"
-
-        if props.get('top') is not None:
-            code += f"  top: {props['top']},\n"
-        if props.get('left') is not None:
-            code += f"  left: {props['left']},\n"
-        if props.get('right') is not None:
-            code += f"  right: {props['right']},\n"
-        if props.get('bottom') is not None:
-            code += f"  bottom: {props['bottom']},\n"
-
+        for k in ['top', 'left', 'right', 'bottom', 'width', 'height']:
+            if props.get(k) is not None:
+                code += f"  {k}: {props[k]},\n"
         if children:
-            child_code = self.generate_widget(children[0], indent_level + 1)
-            code += f"  child: {child_code},\n"
-
+            code += f"  child: {self.generate_widget(children[0], indent_level + 1)},\n"
         code += ")"
         return code
 
     def generate_expanded(self, data, indent_level=0):
-        children = data.get('children', [])
         props = data.get('props', {})
-
+        children = data.get('children', [])
         code = "Expanded(\n"
-
         if props.get('flex'):
             code += f"  flex: {props['flex']},\n"
-
         if children:
-            child_code = self.generate_widget(children[0], indent_level + 1)
-            code += f"  child: {child_code},\n"
-
+            code += f"  child: {self.generate_widget(children[0], indent_level + 1)},\n"
         code += ")"
         return code
 
     def generate_sizedbox(self, data, indent_level=0):
         props = data.get('props', {})
         children = data.get('children', [])
-
         code = "SizedBox(\n"
-
         if props.get('width'):
             code += f"  width: {props['width']},\n"
-
         if props.get('height'):
             code += f"  height: {props['height']},\n"
-
         if children:
-            child_code = self.generate_widget(children[0], indent_level + 1)
-            code += f"  child: {child_code},\n"
-
+            code += f"  child: {self.generate_widget(children[0], indent_level + 1)},\n"
         code += ")"
         return code
 
