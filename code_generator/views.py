@@ -15,6 +15,8 @@ from .serializers import (
     GenerateFlutterSerializer, LoginSerializer
 )
 from .generators.project_generator import FlutterProjectGenerator
+from .utils.apk_builder import APKBuilder
+from .utils.preview_server import get_preview_server
 
 from rest_framework.permissions import IsAuthenticated
 
@@ -167,6 +169,226 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 'timestamp': log.timestamp
             } for log in logs]
         })
+
+    @action(detail=True, methods=['post'])
+    def build_apk(self, request, pk=None):
+        project = self.get_object()
+
+        if not project.generated_file:
+            return Response({
+                'error': 'Project must be generated first before building APK'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if project.status != 'completed':
+            return Response({
+                'error': 'Project generation must be completed before building APK'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Store original status to restore on error
+        original_status = project.status
+        project.status = 'generating'
+        project.save()
+
+        try:
+            GenerationLog.objects.create(
+                project=project,
+                step='build_apk_start',
+                status='info',
+                message='Starting APK build process'
+            )
+
+            # Get the ZIP file path
+            zip_path = os.path.join(
+                settings.MEDIA_ROOT, project.generated_file.name)
+
+            # Build APK
+            apk_output_dir = Path(settings.MEDIA_ROOT) / 'apks'
+            apk_output_dir.mkdir(parents=True, exist_ok=True)
+
+            builder = APKBuilder()
+            apk_path = builder.build_apk_from_zip(zip_path, apk_output_dir)
+
+            # Save APK file reference
+            relative_path = os.path.relpath(apk_path, settings.MEDIA_ROOT)
+            project.apk_file = relative_path
+            project.status = 'completed'
+            project.save()
+
+            GenerationLog.objects.create(
+                project=project,
+                step='build_apk_complete',
+                status='success',
+                message='APK built successfully'
+            )
+
+            return Response({
+                'status': 'success',
+                'message': 'APK built successfully',
+                'download_url': f'/api/projects/{project.id}/download_apk/'
+            })
+
+        except Exception as e:
+            # Restore original status - APK build failure shouldn't affect project generation status
+            project.status = original_status
+            project.error_message = str(e)
+            project.save()
+
+            GenerationLog.objects.create(
+                project=project,
+                step='build_apk_error',
+                status='error',
+                message=str(e)
+            )
+
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['get'])
+    def download_apk(self, request, pk=None):
+        """Download the built APK file."""
+        project = self.get_object()
+
+        if not project.apk_file:
+            return Response({
+                'error': 'APK not built yet. Please build the APK first.'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        file_path = os.path.join(settings.MEDIA_ROOT, project.apk_file.name)
+
+        if not os.path.exists(file_path):
+            return Response({
+                'error': 'APK file not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        return FileResponse(
+            open(file_path, 'rb'),
+            as_attachment=True,
+            filename=f"{project.name}.apk"
+        )
+
+    @action(detail=True, methods=['post'])
+    def start_preview(self, request, pk=None):
+        """Start a live preview server for the generated Flutter project."""
+        project = self.get_object()
+
+        if not project.generated_file:
+            return Response({
+                'error': 'Project must be generated first before starting preview'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if project.status != 'completed':
+            return Response({
+                'error': 'Project generation must be completed before starting preview'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            GenerationLog.objects.create(
+                project=project,
+                step='preview_start',
+                status='info',
+                message='Starting preview server'
+            )
+
+            # Get the ZIP file path
+            zip_path = os.path.join(
+                settings.MEDIA_ROOT, project.generated_file.name)
+
+            # Create temporary directory for preview
+            import tempfile
+            temp_dir = Path(settings.MEDIA_ROOT) / 'previews' / str(project.id)
+            temp_dir.mkdir(parents=True, exist_ok=True)
+
+            # Start preview server
+            preview_server = get_preview_server()
+            result = preview_server.preview_from_zip(
+                zip_path, temp_dir, project_id=str(project.id))
+
+            # Save preview URL
+            project.preview_url = result['preview_url']
+            project.save()
+
+            GenerationLog.objects.create(
+                project=project,
+                step='preview_started',
+                status='success',
+                message=f"Preview server started at {result['preview_url']}"
+            )
+
+            return Response({
+                'status': 'success',
+                'message': 'Preview server started successfully',
+                'preview_url': result['preview_url'],
+                'port': result['port']
+            })
+
+        except Exception as e:
+            GenerationLog.objects.create(
+                project=project,
+                step='preview_error',
+                status='error',
+                message=str(e)
+            )
+
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'])
+    def stop_preview(self, request, pk=None):
+        """Stop the preview server for a project."""
+        project = self.get_object()
+
+        try:
+            preview_server = get_preview_server()
+            success = preview_server.stop_preview(str(project.id))
+
+            if success:
+                project.preview_url = None
+                project.save()
+
+                GenerationLog.objects.create(
+                    project=project,
+                    step='preview_stopped',
+                    status='success',
+                    message='Preview server stopped'
+                )
+
+                return Response({
+                    'status': 'success',
+                    'message': 'Preview server stopped successfully'
+                })
+            else:
+                return Response({
+                    'status': 'info',
+                    'message': 'No active preview server found for this project'
+                })
+
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'])
+    def active_previews(self, request):
+        """Get list of all active preview servers."""
+        try:
+            preview_server = get_preview_server()
+            active_previews = preview_server.get_active_previews()
+
+            return Response({
+                'status': 'success',
+                'active_previews': active_previews
+            })
+
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # API endpoints for managing screens
 

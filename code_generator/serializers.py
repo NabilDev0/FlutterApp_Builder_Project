@@ -17,9 +17,10 @@ class ProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
         fields = ['id', 'name', 'description', 'json_data', 'status', 'screens',
-                  'created_at', 'updated_at', 'generated_file', 'error_message']
-        read_only_fields = ['id', 'status',
-                            'created_at', 'updated_at', 'generated_file']
+                  'created_at', 'updated_at', 'generated_file', 'apk_file', 
+                  'preview_url', 'error_message']
+        read_only_fields = ['id', 'status', 'created_at', 'updated_at', 
+                            'generated_file', 'apk_file', 'preview_url']
 
 
 class ProjectCreateSerializer(serializers.ModelSerializer):

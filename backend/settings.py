@@ -119,6 +119,9 @@ SPECTACULAR_SETTINGS = {
 
 # Flutter Generation Settings
 FLUTTER_SDK_PATH = os.environ.get('FLUTTER_SDK_PATH', '/usr/local/flutter')
+ANDROID_SDK_PATH = os.environ.get(
+    'ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT')
+JAVA_HOME = os.environ.get('JAVA_HOME')
 FLUTTER_VERSION = '3.22.0'
 DART_SDK_PATH = os.environ.get('DART_SDK_PATH', '/usr/local/dart-sdk')
 
