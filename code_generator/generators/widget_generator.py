@@ -1,11 +1,69 @@
 
+class WidgetValidationError(Exception):
+    """Exception raised for errors in the widget configuration."""
+    pass
+
+
 class WidgetGenerator:
 
     def __init__(self):
-        pass  # Don't store state at instance level
+        # Define widget rules: 'child', 'children', 'none', or 'special'
+        self.widget_rules = {
+            'Container': 'child',
+            'Center': 'child',
+            'Padding': 'child',
+            'Expanded': 'child',
+            'SizedBox': 'child',
+            'Positioned': 'child',
+            'Card': 'child',
+            'Drawer': 'child',
+            'Row': 'children',
+            'Column': 'children',
+            'Stack': 'children',
+            'ListView': 'special',  # Uses itemTemplate
+            'Text': 'none',
+            'Image': 'none',
+            'Icon': 'none',
+            'TextField': 'none',
+            'Button': 'none',
+            'AppBar': 'special',
+            'BottomNavigationBar': 'special',
+            'Scaffold': 'special',
+        }
+
+    def _validate_widget(self, widget_type, data):
+        rule = self.widget_rules.get(widget_type)
+        if not rule:
+            return  # Unknown widget, skip validation
+
+        children = data.get('children', [])
+
+        # Check for 'child' in props as well (some JSON might use it)
+        if not children and data.get('props', {}).get('child'):
+            children = [data.get('props', {}).get('child')]
+            # Normalize to children list for internal use
+            data['children'] = children
+
+        if rule == 'child':
+            if len(children) > 1:
+                raise WidgetValidationError(
+                    f"Widget '{widget_type}' can only have ONE child, but {len(children)} were provided. "
+                    f"Wrap them in a Column or Row if multiple children are needed."
+                )
+        elif rule == 'children':
+            # Multiple children are allowed, no specific count validation needed here
+            pass
+        elif rule == 'none':
+            if children:
+                raise WidgetValidationError(
+                    f"Widget '{widget_type}' does not support children, but {len(children)} were provided."
+                )
 
     def generate_widget(self, widget_data, indent_level=0):
         widget_type = widget_data.get('type', '')
+
+        # Validate before generating
+        self._validate_widget(widget_type, widget_data)
 
         generators = {
             'Text': self.generate_text,
@@ -99,10 +157,20 @@ class WidgetGenerator:
 
         code = "Container(\n"
 
-        if layout.get('w'):
-            code += f"  width: {float(layout['w'])},\n"
-        if layout.get('h'):
-            code += f"  height: {float(layout['h'])},\n"
+        width = layout.get('w') or props.get('width')
+        height = layout.get('h') or props.get('height')
+
+        if width:
+            try:
+                code += f"  width: {float(width)},\n"
+            except (ValueError, TypeError):
+                code += f"  width: {width},\n"
+
+        if height:
+            try:
+                code += f"  height: {float(height)},\n"
+            except (ValueError, TypeError):
+                code += f"  height: {height},\n"
 
         if props.get('alignment'):
             code += f"  alignment: Alignment.{props['alignment']},\n"
@@ -139,19 +207,8 @@ class WidgetGenerator:
             code += f"  color: {color_code},\n"
 
         if children:
-            if len(children) == 1:
-                child_code = self.generate_widget(
-                    children[0], indent_level + 1)
-                code += f"  child: {child_code},\n"
-            else:
-                code += f"  child: Column(\n"
-                code += f"    mainAxisSize: MainAxisSize.min,\n"
-                code += f"    children: [\n"
-                for child in children:
-                    child_code = self.generate_widget(child, indent_level + 2)
-                    code += f"      {child_code},\n"
-                code += f"    ],\n"
-                code += f"  ),\n"
+            child_code = self.generate_widget(children[0], indent_level + 1)
+            code += f"  child: {child_code},\n"
 
         code += ")"
         return code
@@ -161,9 +218,6 @@ class WidgetGenerator:
         children = data.get('children', [])
 
         code = "Row(\n"
-
-        # In Flutter, Row takes max width by default.
-        # If user explicitly sets mainAxisSize to min, we honor it.
         main_axis_size = props.get('mainAxisSize', 'max')
         code += f"  mainAxisSize: MainAxisSize.{main_axis_size},\n"
 
@@ -185,9 +239,6 @@ class WidgetGenerator:
         children = data.get('children', [])
 
         code = "Column(\n"
-
-        # In Flutter, Column takes max height by default.
-        # If user explicitly sets mainAxisSize to min, we honor it.
         main_axis_size = props.get('mainAxisSize', 'max')
         code += f"  mainAxisSize: MainAxisSize.{main_axis_size},\n"
 
@@ -210,13 +261,13 @@ class WidgetGenerator:
             "'", "\\'").replace('$', '\\$')
         actions = props.get('actions', [])
 
-        # Button Style
         style_parts = []
         bg_color = self._parse_color(props.get('backgroundColor'))
         if bg_color:
             style_parts.append(
                 f"backgroundColor: WidgetStateProperty.all({bg_color})")
-        fg_color = self._parse_color(props.get('color'))
+        text_color_hex = props.get('textColor') or props.get('color')
+        fg_color = self._parse_color(text_color_hex)
         if fg_color:
             style_parts.append(
                 f"foregroundColor: WidgetStateProperty.all({fg_color})")
@@ -259,7 +310,9 @@ class WidgetGenerator:
             message = current_action.get('message', 'Action completed').replace(
                 "'", "\\'").replace('$', '\\$')
             code += f"{indent}ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('{message}')));\n"
-            code += self.generate_action_chain(remaining_actions, indent_level)
+            if remaining_actions:
+                code += self.generate_action_chain(
+                    remaining_actions, indent_level)
         elif action_type == 'dialog':
             title = current_action.get('title', 'Notification').replace(
                 "'", "\\'").replace('$', '\\$')
@@ -305,10 +358,13 @@ class WidgetGenerator:
         title = props.get('title', 'App').replace(
             "'", "\\'").replace('$', '\\$')
         code = "AppBar(\n"
-        code += f"  title: Text('{title}'),\n"
+        title_color = self._parse_color(props.get('color'))
+        if title_color:
+            code += f"  title: Text('{title}', style: TextStyle(color: {title_color})),\n"
+        else:
+            code += f"  title: Text('{title}'),\n"
         code += f"  centerTitle: {str(props.get('centerTitle', False)).lower()},\n"
 
-        # back button option
         if props.get('showBackButton'):
             code += "  leading: IconButton(\n"
             code += "    icon: const Icon(Icons.arrow_back),\n"
@@ -338,7 +394,6 @@ class WidgetGenerator:
         if bg_color:
             code += f"  backgroundColor: {bg_color},\n"
 
-        # BottomNavigationBar
         bottom_nav = next((c for c in children if c.get(
             'type') == 'BottomNavigationBar'), None)
         if bottom_nav:
@@ -346,15 +401,20 @@ class WidgetGenerator:
             children = [c for c in children if c.get(
                 'type') != 'BottomNavigationBar']
 
-        # Drawer
         drawer = next((c for c in children if c.get('type') == 'Drawer'), None)
         if drawer:
             code += f"  drawer: {self.generate_widget(drawer, indent_level + 1)},\n"
             children = [c for c in children if c.get('type') != 'Drawer']
 
         if children:
-            body_child = children[0] if len(children) == 1 else {
-                'type': 'Column', 'children': children, 'props': {'crossAxisAlignment': 'start'}}
+            if len(children) > 1:
+                body_child = {
+                    'type': 'Column',
+                    'children': children,
+                    'props': {'crossAxisAlignment': 'start'}
+                }
+            else:
+                body_child = children[0]
             code += f"  body: {self.generate_widget(body_child, indent_level + 1)},\n"
         code += ")"
         return code
@@ -409,13 +469,10 @@ class WidgetGenerator:
         children = data.get('children', [])
 
         code = "Drawer(\n"
-
-        # Usually a Drawer contains a ListView
         code += "  child: ListView(\n"
         code += "    padding: EdgeInsets.zero,\n"
         code += "    children: [\n"
 
-        # Handle DrawerHeader if present in props
         header = props.get('header')
         if header:
             title = header.get('title', 'Menu').replace("'", "\\'")
@@ -436,7 +493,6 @@ class WidgetGenerator:
             code += "      ),\n"
 
         for child in children:
-            # If it's a ListTile-like structure
             if child.get('type') == 'ListTile':
                 c_props = child.get('props', {})
                 title = c_props.get('title', 'Item').replace("'", "\\'")
@@ -455,7 +511,6 @@ class WidgetGenerator:
                 code += "        },\n"
                 code += "      ),\n"
             else:
-                # Fallback to normal widget generation
                 code += f"      {self.generate_widget(child, indent_level + 3)},\n"
 
         code += "    ],\n"
@@ -490,8 +545,7 @@ class WidgetGenerator:
             code += f"  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular({props['borderRadius']})),\n"
 
         if children:
-            child_code = self.generate_widget(children[0] if len(children) == 1 else {
-                                              'type': 'Column', 'children': children}, indent_level + 1)
+            child_code = self.generate_widget(children[0], indent_level + 1)
             code += f"  child: {child_code},\n"
         code += ")"
         return code
@@ -535,8 +589,7 @@ class WidgetGenerator:
         padding = props.get('padding', 8)
         code = f"Padding(padding: EdgeInsets.all({padding}),\n"
         if children:
-            child_code = self.generate_widget(children[0] if len(children) == 1 else {
-                                              'type': 'Column', 'children': children}, indent_level + 1)
+            child_code = self.generate_widget(children[0], indent_level + 1)
             code += f"  child: {child_code},\n"
         code += ")"
         return code
@@ -545,8 +598,7 @@ class WidgetGenerator:
         children = data.get('children', [])
         code = "Center(\n"
         if children:
-            child_code = self.generate_widget(children[0] if len(children) == 1 else {
-                                              'type': 'Column', 'children': children}, indent_level + 1)
+            child_code = self.generate_widget(children[0], indent_level + 1)
             code += f"  child: {child_code},\n"
         code += ")"
         return code
