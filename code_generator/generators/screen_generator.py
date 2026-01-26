@@ -56,11 +56,13 @@ class ScreenGenerator:
             has_scaffold = any(c.get('type') == 'Scaffold' for c in components)
 
             if has_scaffold:
+                # User provided Scaffold - just generate it as-is
+                # The Scaffold body will be made scrollable automatically
                 scaffold = next(
                     c for c in components if c.get('type') == 'Scaffold')
                 code += self.widget_generator.generate_widget(scaffold)
             else:
-                # Wrap in Scaffold if not present
+                # No Scaffold provided - create one with scrollable body
                 code += "Scaffold(\n"
 
                 # Check for AppBar
@@ -91,28 +93,26 @@ class ScreenGenerator:
                     components = [
                         c for c in components if c.get('type') != 'Drawer']
 
-                # Body
+                # Body - wrap in SingleChildScrollView to prevent overflow
                 if len(components) == 1:
                     comp = components[0]
                     comp_type = comp.get('type')
 
                     if comp_type == 'ListView':
+                        # ListView handles its own scrolling
                         lv_data = comp.copy()
                         code += "      body: ListView.builder(\n"
                         code += f"        itemCount: {lv_data.get('props', {}).get('itemCount', 10)},\n"
                         code += f"        itemBuilder: (context, index) => {self.widget_generator.generate_widget(lv_data.get('itemTemplate', {}), 4)},\n"
                         code += "      ),\n"
-                    elif comp_type == 'Center':
-                        # If top-level is Center, don't wrap in SingleChildScrollView
-                        # as it might break centering if the child is a Column
-                        code += "      body: " + \
-                            self.widget_generator.generate_widget(comp) + ",\n"
                     else:
+                        # Wrap in SingleChildScrollView for overflow prevention
                         code += "      body: SingleChildScrollView(\n"
                         code += "        child: " + \
                             self.widget_generator.generate_widget(comp) + ",\n"
                         code += "      ),\n"
                 else:
+                    # Multiple components - wrap in Column inside SingleChildScrollView
                     code += "      body: SingleChildScrollView(\n"
                     code += "        child: Column(\n"
                     code += "          children: [\n"
