@@ -170,6 +170,33 @@ class WidgetGeneratorTests(TestCase):
 		self.assertNotIn('width: 100.0', code)
 		self.assertNotIn('height: 50.0', code)
 
+	def test_container_does_not_mutate_input(self):
+		"""Test that generating a container does not mutate the input data."""
+		from code_generator.generators.widget_generator import WidgetGenerator
+		
+		generator = WidgetGenerator()
+		container_data = {
+			'type': 'Container',
+			'layout': {'w': 100, 'h': 50},
+			'props': {'backgroundColor': '#FF0000'},
+			'children': []
+		}
+		
+		# Store original props keys
+		original_props_keys = set(container_data['props'].keys())
+		
+		# Generate container
+		code = generator.generate_container(container_data)
+		
+		# Verify original data was not mutated
+		self.assertEqual(set(container_data['props'].keys()), original_props_keys)
+		self.assertNotIn('width', container_data['props'])
+		self.assertNotIn('height', container_data['props'])
+		
+		# But the generated code should include the dimensions
+		self.assertIn('width: 100.0', code)
+		self.assertIn('height: 50.0', code)
+
 
 class ProjectAPITests(TestCase):
 	def setUp(self):

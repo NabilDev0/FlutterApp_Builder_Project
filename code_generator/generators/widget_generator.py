@@ -183,7 +183,8 @@ class WidgetGenerator:
 
     def generate_container(self, data, indent_level=0):
         """Generate Container widget with all supported props."""
-        props = data.get('props', {})
+        # Create a copy of props to avoid mutating input data
+        props = dict(data.get('props', {}))
         children = data.get('children', [])
         
         # Migration logic: lift layout.w and layout.h into props if present
