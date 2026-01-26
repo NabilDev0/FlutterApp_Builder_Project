@@ -110,6 +110,67 @@ class FlutterProjectGeneratorTests(TestCase):
 				self.assertIn("smokeapp/lib/utils/routes.dart", members)
 
 
+class WidgetGeneratorTests(TestCase):
+	def test_container_with_props_width_height(self):
+		"""Test that Container works with width and height in props."""
+		from code_generator.generators.widget_generator import WidgetGenerator
+		
+		generator = WidgetGenerator()
+		container_data = {
+			'type': 'Container',
+			'props': {
+				'width': 200,
+				'height': 100,
+				'backgroundColor': '#FF0000'
+			},
+			'children': []
+		}
+		
+		code = generator.generate_container(container_data)
+		self.assertIn('width: 200.0', code)
+		self.assertIn('height: 100.0', code)
+		self.assertIn('Color(0xFFFF0000)', code)
+
+	def test_container_migration_from_layout(self):
+		"""Test that old layout format is migrated to props."""
+		from code_generator.generators.widget_generator import WidgetGenerator
+		
+		generator = WidgetGenerator()
+		container_data = {
+			'type': 'Container',
+			'layout': {'w': 150, 'h': 75},
+			'props': {'backgroundColor': '#00FF00'},
+			'children': []
+		}
+		
+		code = generator.generate_container(container_data)
+		self.assertIn('width: 150.0', code)
+		self.assertIn('height: 75.0', code)
+		self.assertIn('Color(0xFF00FF00)', code)
+
+	def test_container_props_override_layout(self):
+		"""Test that props take priority over layout when both exist."""
+		from code_generator.generators.widget_generator import WidgetGenerator
+		
+		generator = WidgetGenerator()
+		container_data = {
+			'type': 'Container',
+			'layout': {'w': 100, 'h': 50},
+			'props': {
+				'width': 200,  # This should win
+				'height': 150,  # This should win
+				'backgroundColor': '#0000FF'
+			},
+			'children': []
+		}
+		
+		code = generator.generate_container(container_data)
+		self.assertIn('width: 200.0', code)
+		self.assertIn('height: 150.0', code)
+		self.assertNotIn('width: 100.0', code)
+		self.assertNotIn('height: 50.0', code)
+
+
 class ProjectAPITests(TestCase):
 	def setUp(self):
 		super().setUp()

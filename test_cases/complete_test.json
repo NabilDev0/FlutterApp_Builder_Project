@@ -344,11 +344,9 @@
                   "type": "Container",
                   "props": {
                     "backgroundColor": "#FF5722",
-                    "padding": 20
-                  },
-                  "layout": {
-                    "w": 10,
-                    "h": 2
+                    "padding": 20,
+                    "width": 10,
+                    "height": 2
                   },
                   "children": [
                     {
@@ -463,11 +461,9 @@
                       "type": "Container",
                       "props": {
                         "backgroundColor": "#9C27B0",
-                        "padding": 40
-                      },
-                      "layout": {
-                        "w": 10,
-                        "h": 3
+                        "padding": 40,
+                        "width": 10,
+                        "height": 3
                       }
                     },
                     {
