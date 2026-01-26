@@ -209,7 +209,7 @@ This section details **all** supported widgets and their corresponding propertie
 | :------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------- |
 | **Scaffold**   | `backgroundColor` (hex)                                                                                                                                                     | Basic page structure.                                     |
 | **AppBar**     | `title` (string), `backgroundColor` (hex), `elevation` (number), `centerTitle` (bool), `showBackButton` (bool), `automaticallyImplyLeading` (bool)                          | Top navigation bar.                                       |
-| **Container**  | `backgroundColor` (hex), `padding` (number), `margin` (number), `borderRadius` (number), `border` (bool), `borderColor` (hex), `borderWidth` (number), `alignment` (string) | Versatile box. Supports `layout` object with `w` and `h`. |
+| **Container**  | `backgroundColor` (hex), `padding` (number), `margin` (number), `borderRadius` (number), `border` (bool), `borderColor` (hex), `borderWidth` (number), `alignment` (string), `width` (number), `height` (number) | Versatile box with width and height in props. |
 | **Row**        | `mainAxisAlignment` (string), `crossAxisAlignment` (string), `mainAxisSize` (string)                                                                                        | Horizontal layout.                                        |
 | **Column**     | `mainAxisAlignment` (string), `crossAxisAlignment` (string), `mainAxisSize` (string)                                                                                        | Vertical layout.                                          |
 | **Stack**      | None                                                                                                                                                                        | Overlapping layout.                                       |
@@ -283,8 +283,9 @@ This section details **all** supported widgets and their corresponding propertie
 ```json
 {
   "type": "Container",
-  "layout": { "w": 200, "h": 100 },
   "props": {
+    "width": 200,
+    "height": 100,
     "backgroundColor": "#E3F2FD",
     "padding": 16,
     "margin": 8,

@@ -187,13 +187,20 @@ class WidgetGenerator:
         """Generate Container widget with all supported props."""
         props = data.get('props', {})
         children = data.get('children', [])
+        
+        # Migration logic: lift layout.w and layout.h into props if present
         layout = data.get('layout', {})
+        if layout:
+            if 'w' in layout and 'width' not in props:
+                props['width'] = layout['w']
+            if 'h' in layout and 'height' not in props:
+                props['height'] = layout['h']
 
         code = "Container(\n"
 
-        # Width and height (support both layout and props)
-        width = layout.get('w') or props.get('width')
-        height = layout.get('h') or props.get('height')
+        # Width and height from props only
+        width = props.get('width')
+        height = props.get('height')
 
         # Only add width if it's a valid number (not "auto")
         if width and width != "auto":
