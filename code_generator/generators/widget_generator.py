@@ -27,6 +27,7 @@ class WidgetGenerator:
             'AppBar': 'special',
             'BottomNavigationBar': 'special',
             'Scaffold': 'special',
+            'ListTile': 'none',
         }
 
     def _validate_widget(self, widget_type, data):
@@ -86,6 +87,7 @@ class WidgetGenerator:
             'SizedBox': self.generate_sizedbox,
             'BottomNavigationBar': self.generate_bottom_navigation_bar,
             'Drawer': self.generate_drawer,
+            'ListTile': self.generate_listtile,
         }
 
         generator = generators.get(widget_type, self.generate_unknown)
@@ -193,12 +195,19 @@ class WidgetGenerator:
         width = layout.get('w') or props.get('width')
         height = layout.get('h') or props.get('height')
 
-        if width:
-            code += f"  width: {float(width) if isinstance(width, (int, float, str)) and str(width).replace('.', '').isdigit() else width},\n"
+        # Only add width if it's a valid number (not "auto")
+        if width and width != "auto":
+            if isinstance(width, (int, float)):
+                code += f"  width: {float(width)},\n"
+            elif isinstance(width, str) and width.replace('.', '').replace('-', '').isdigit():
+                code += f"  width: {float(width)},\n"
 
-        if height:
-            code += f"  height: {float(height) if isinstance(height, (int, float, str)) and str(height).replace('.', '').isdigit() else height},\n"
-
+        # Only add height if it's a valid number (not "auto")
+        if height and height != "auto":
+            if isinstance(height, (int, float)):
+                code += f"  height: {float(height)},\n"
+            elif isinstance(height, str) and height.replace('.', '').replace('-', '').isdigit():
+                code += f"  height: {float(height)},\n"
         # Alignment
         if props.get('alignment'):
             code += f"  alignment: Alignment.{props['alignment']},\n"
@@ -555,40 +564,46 @@ class WidgetGenerator:
         props = data.get('props', {})
         items = data.get('items', [])
 
+        if not items:
+            return "Container()"
+
         code = "BottomNavigationBar(\n"
 
-        # Current index
-        if props.get('currentIndex') is not None:
-            code += f"  currentIndex: {props['currentIndex']},\n"
+        # Current index - DYNAMIC
+        code += "  currentIndex: () {\n"
+        code += "    final currentRoute = ModalRoute.of(context)?.settings.name;\n"
+        for i, item in enumerate(items):
+            route = item.get('route', '/')
+            code += f"    if (currentRoute == '{route}') return {i};\n"
+        code += "    return 0;\n"
+        code += "  }(),\n"
 
         # Type
         if props.get('type'):
             code += f"  type: BottomNavigationBarType.{props['type']},\n"
 
-        # Selected item color
+        # Colors
         selected_color = self._parse_color(props.get('selectedItemColor'))
         if selected_color:
             code += f"  selectedItemColor: {selected_color},\n"
 
-        # Unselected item color
         unselected_color = self._parse_color(props.get('unselectedItemColor'))
         if unselected_color:
             code += f"  unselectedItemColor: {unselected_color},\n"
 
         # onTap handler
         code += "  onTap: (index) {\n"
-        code += "    debugPrint('BottomNav tap: $index');\n"
-        code += "    switch (index) {\n"
-
-        for i, item in enumerate(items):
-            route = item.get('route')
-            if route:
-                code += f"      case {i}:\n"
-                code += f"        if (ModalRoute.of(context)?.settings.name != '{route}') {{\n"
-                code += f"          Navigator.pushReplacementNamed(context, '{route}');\n"
-                code += "        }\n"
-                code += "        break;\n"
-
+        code += "    final routes = [\n"
+        for item in items:
+            route = item.get('route', '/')
+            code += f"      '{route}',\n"
+        code += "    ];\n"
+        code += "    if (index < routes.length) {\n"
+        code += "      final targetRoute = routes[index];\n"
+        code += "      final currentRoute = ModalRoute.of(context)?.settings.name;\n"
+        code += "      if (currentRoute != targetRoute) {\n"
+        code += "        Navigator.pushReplacementNamed(context, targetRoute);\n"
+        code += "      }\n"
         code += "    }\n"
         code += "  },\n"
 
@@ -661,6 +676,41 @@ class WidgetGenerator:
 
         code += "    ],\n"
         code += "  ),\n"
+        code += ")"
+        return code
+
+    def generate_listtile(self, data, indent_level=0):
+        """Generate ListTile widget with all supported props."""
+        props = data.get('props', {})
+
+        code = "ListTile(\n"
+
+        # Leading icon
+        if props.get('icon'):
+            icon = props.get('icon')
+            code += f"  leading: Icon(Icons.{icon}),\n"
+
+        # Title
+        title = props.get('title', 'List Item').replace("'", "\\'")
+        code += f"  title: Text('{title}'),\n"
+
+        # Subtitle
+        if props.get('subtitle'):
+            subtitle = props.get('subtitle', '').replace("'", "\\'")
+            code += f"  subtitle: Text('{subtitle}'),\n"
+
+        # Trailing icon
+        if props.get('trailingIcon'):
+            trailing_icon = props.get('trailingIcon')
+            code += f"  trailing: Icon(Icons.{trailing_icon}),\n"
+
+        # onTap handler with actions
+        actions = props.get('actions', [])
+        if actions:
+            code += "  onTap: () {\n"
+            code += self.generate_action_chain(actions, indent_level + 2)
+            code += "  },\n"
+
         code += ")"
         return code
 
