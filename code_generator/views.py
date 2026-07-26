@@ -372,6 +372,47 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 'message': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=True, methods=['post'])
+    def update_preview(self, request, pk=None):
+        project = self.get_object()
+
+        screen_data = request.data.get('screen')
+        if not screen_data:
+            return Response({
+                'error': 'Request body must include a "screen" object'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            preview_server = get_preview_server()
+            result = preview_server.update_screen(
+                str(project.id), screen_data)
+
+            return Response({
+                'status': 'success',
+                'message': f"Hot reloaded {result['reloaded_screen']}",
+            })
+
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def preview_heartbeat(self, request, pk=None):
+        project = self.get_object()
+
+        preview_server = get_preview_server()
+        found = preview_server.touch(str(project.id))
+
+        if not found:
+            return Response({
+                'status': 'info',
+                'message': 'No active preview server found for this project'
+            })
+
+        return Response({'status': 'success'})
+
     @action(detail=False, methods=['get'])
     def active_previews(self, request):
         """Get list of all active preview servers."""

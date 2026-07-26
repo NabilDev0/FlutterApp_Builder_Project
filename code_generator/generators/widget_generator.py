@@ -547,9 +547,19 @@ class WidgetGenerator:
                 # Already scrollable, don't double-wrap
                 code += f"  body: {self.generate_widget(body_widget, indent_level + 1)},\n"
             else:
-                # Wrap in SingleChildScrollView to prevent overflow
-                code += "  body: SingleChildScrollView(\n"
-                code += f"    child: {self.generate_widget(body_widget, indent_level + 2)},\n"
+                # Wrap using LayoutBuilder + ConstrainedBox(minHeight) instead of a bare
+                # SingleChildScrollView, which gives its child UNBOUNDED height and
+                # silently breaks Center/Expanded/anything that needs to fill space
+                inner = self.generate_widget(body_widget, indent_level + 3)
+                code += "  body: LayoutBuilder(\n"
+                code += "    builder: (context, constraints) {\n"
+                code += "      return SingleChildScrollView(\n"
+                code += "        child: ConstrainedBox(\n"
+                code += "          constraints: BoxConstraints(minHeight: constraints.maxHeight),\n"
+                code += f"          child: {inner},\n"
+                code += "        ),\n"
+                code += "      );\n"
+                code += "    },\n"
                 code += "  ),\n"
 
         # Bottom navigation bar (comes AFTER body)

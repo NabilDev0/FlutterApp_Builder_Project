@@ -128,3 +128,6 @@ DART_SDK_PATH = os.environ.get('DART_SDK_PATH', '/usr/local/dart-sdk')
 # Project Generation Settings
 MAX_PROJECTS_PER_USER = 10
 PROJECT_RETENTION_DAYS = 30
+
+# How long (seconds) an unused Flutter preview process is left running
+PREVIEW_IDLE_TIMEOUT = 10 * 60
