@@ -10,14 +10,14 @@ A Django REST API backend that generates complete Flutter mobile applications fr
 
 ## Installation
 
-1.  **Clone the repository**
+1. **Clone the repository**
 
     ```bash
     git clone https://github.com/NabilDev0/FlutterApp_Builder_Project.git
     cd flutter_builder_project
     ```
 
-2.  **Create virtual environment**
+2. **Create virtual environment**
 
     ```bash
     python -m venv venv
@@ -25,19 +25,19 @@ A Django REST API backend that generates complete Flutter mobile applications fr
     venv/Scripts/activate
     ```
 
-3.  **Install dependencies**
+3. **Install dependencies**
 
     ```bash
     pip install -r requirements.txt
     ```
 
-4.  **Run migrations**
+4. **Run migrations**
 
     ```bash
     python manage.py migrate
     ```
 
-5.  **Start development server**
+5. **Start development server**
 
     ```bash
     python manage.py runserver
@@ -166,7 +166,7 @@ Content-Type: application/json
 
 This flow is for authenticated users to save, manage, and generate projects.
 
-1.  **Create Project**
+1. **Create Project**
 
     ```bash
     POST /api/projects/
@@ -178,21 +178,21 @@ This flow is for authenticated users to save, manage, and generate projects.
     }
     ```
 
-2.  **Generate Flutter Project**
+2. **Generate Flutter Project**
 
     ```bash
     POST /api/projects/{id}/generate/
     Authorization: Token <your_token>
     ```
 
-3.  **Download Generated Project**
+3. **Download Generated Project**
 
     ```bash
     GET /api/projects/{id}/download/
     Authorization: Token <your_token>
     ```
 
-4.  **View Generation Logs**
+4. **View Generation Logs**
 
     ```bash
     GET /api/projects/{id}/logs/
@@ -209,7 +209,7 @@ This section details **all** supported widgets and their corresponding propertie
 | :------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------- |
 | **Scaffold**   | `backgroundColor` (hex)                                                                                                                                                     | Basic page structure.                                     |
 | **AppBar**     | `title` (string), `backgroundColor` (hex), `elevation` (number), `centerTitle` (bool), `showBackButton` (bool), `automaticallyImplyLeading` (bool)                          | Top navigation bar.                                       |
-| **Container**  | `backgroundColor` (hex), `padding` (number), `margin` (number), `borderRadius` (number), `border` (bool), `borderColor` (hex), `borderWidth` (number), `alignment` (string) | Versatile box. Supports `layout` object with `w` and `h`. |
+| **Container**  | `backgroundColor` (hex), `padding` (number), `margin` (number), `borderRadius` (number), `border` (bool), `borderColor` (hex), `borderWidth` (number), `alignment` (string), `width` (number), `height` (number) | Versatile box with width and height in props. |
 | **Row**        | `mainAxisAlignment` (string), `crossAxisAlignment` (string), `mainAxisSize` (string)                                                                                        | Horizontal layout.                                        |
 | **Column**     | `mainAxisAlignment` (string), `crossAxisAlignment` (string), `mainAxisSize` (string)                                                                                        | Vertical layout.                                          |
 | **Stack**      | None                                                                                                                                                                        | Overlapping layout.                                       |
@@ -283,8 +283,9 @@ This section details **all** supported widgets and their corresponding propertie
 ```json
 {
   "type": "Container",
-  "layout": { "w": 200, "h": 100 },
   "props": {
+    "width": 200,
+    "height": 100,
     "backgroundColor": "#E3F2FD",
     "padding": 16,
     "margin": 8,

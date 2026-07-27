@@ -101,6 +101,38 @@ class WidgetGenerator:
         lines = code.split('\n')
         return '\n'.join(spaces + line if line.strip() else line for line in lines)
 
+    def contains_widget_type(self, widget_data, widget_type):
+        """Return True when a widget tree contains a widget type."""
+        if not isinstance(widget_data, dict):
+            return False
+
+        if widget_data.get('type') == widget_type:
+            return True
+
+        children = widget_data.get('children', [])
+        if any(self.contains_widget_type(child, widget_type) for child in children):
+            return True
+
+        props_child = widget_data.get('props', {}).get('child')
+        if props_child and self.contains_widget_type(props_child, widget_type):
+            return True
+
+        item_template = widget_data.get('itemTemplate')
+        if item_template and self.contains_widget_type(item_template, widget_type):
+            return True
+
+        return False
+
+    def ensure_scaffold_body_widget(self, widget_data):
+        """Keep top-level Expanded valid by giving it a Flex parent."""
+        if isinstance(widget_data, dict) and widget_data.get('type') == 'Expanded':
+            return {
+                'type': 'Column',
+                'children': [widget_data],
+                'props': {'crossAxisAlignment': 'stretch'}
+            }
+        return widget_data
+
     def _parse_color(self, color_str):
         """Parse hex color string to Flutter Color format."""
         if not color_str:
@@ -185,15 +217,20 @@ class WidgetGenerator:
 
     def generate_container(self, data, indent_level=0):
         """Generate Container widget with all supported props."""
-        props = data.get('props', {})
+        props = dict(data.get('props', {}))
         children = data.get('children', [])
         layout = data.get('layout', {})
 
+        if 'width' not in props and 'w' in layout:
+            props['width'] = layout['w']
+        if 'height' not in props and 'h' in layout:
+            props['height'] = layout['h']
+
         code = "Container(\n"
 
-        # Width and height (support both layout and props)
-        width = layout.get('w') or props.get('width')
-        height = layout.get('h') or props.get('height')
+        # Width and height from props, with legacy layout fallback above.
+        width = props.get('width')
+        height = props.get('height')
 
         # Only add width if it's a valid number (not "auto")
         if width and width != "auto":
@@ -538,6 +575,8 @@ class WidgetGenerator:
             else:
                 body_widget = body_children[0]
 
+            body_widget = self.ensure_scaffold_body_widget(body_widget)
+
             # Check if body is already a scrollable widget
             body_type = body_widget.get('type', '')
             scrollable_widgets = ['ListView', 'GridView',
@@ -545,6 +584,10 @@ class WidgetGenerator:
 
             if body_type in scrollable_widgets:
                 # Already scrollable, don't double-wrap
+                code += f"  body: {self.generate_widget(body_widget, indent_level + 1)},\n"
+            elif self.contains_widget_type(body_widget, 'Expanded'):
+                # Expanded needs bounded height from Scaffold.body. A scroll view would
+                # give the child unbounded height and trigger a RenderFlex error.
                 code += f"  body: {self.generate_widget(body_widget, indent_level + 1)},\n"
             else:
                 # Wrap using LayoutBuilder + ConstrainedBox(minHeight) instead of a bare
@@ -579,14 +622,17 @@ class WidgetGenerator:
 
         code = "BottomNavigationBar(\n"
 
-        # Current index - DYNAMIC
-        code += "  currentIndex: () {\n"
-        code += "    final currentRoute = ModalRoute.of(context)?.settings.name;\n"
-        for i, item in enumerate(items):
-            route = item.get('route', '/')
-            code += f"    if (currentRoute == '{route}') return {i};\n"
-        code += "    return 0;\n"
-        code += "  }(),\n"
+        # Current index - explicit prop wins, otherwise infer from route
+        if props.get('currentIndex') is not None:
+            code += f"  currentIndex: {props['currentIndex']},\n"
+        else:
+            code += "  currentIndex: () {\n"
+            code += "    final currentRoute = ModalRoute.of(context)?.settings.name;\n"
+            for i, item in enumerate(items):
+                route = item.get('route', '/')
+                code += f"    if (currentRoute == '{route}') return {i};\n"
+            code += "    return 0;\n"
+            code += "  }(),\n"
 
         # Type
         if props.get('type'):

@@ -105,6 +105,11 @@ class ScreenGenerator:
                         code += f"        itemCount: {lv_data.get('props', {}).get('itemCount', 10)},\n"
                         code += f"        itemBuilder: (context, index) => {self.widget_generator.generate_widget(lv_data.get('itemTemplate', {}), 4)},\n"
                         code += "      ),\n"
+                    elif self.widget_generator.contains_widget_type(comp, 'Expanded'):
+                        comp = self.widget_generator.ensure_scaffold_body_widget(
+                            comp)
+                        code += "      body: " + \
+                            self.widget_generator.generate_widget(comp) + ",\n"
                     else:
                         # Wrap in SingleChildScrollView for overflow prevention
                         code += "      body: SingleChildScrollView(\n"
@@ -112,16 +117,23 @@ class ScreenGenerator:
                             self.widget_generator.generate_widget(comp) + ",\n"
                         code += "      ),\n"
                 else:
-                    # Multiple components - wrap in Column inside SingleChildScrollView
-                    code += "      body: SingleChildScrollView(\n"
-                    code += "        child: Column(\n"
-                    code += "          children: [\n"
-                    for comp in components:
-                        code += "            " + \
-                            self.widget_generator.generate_widget(comp) + ",\n"
-                    code += "          ],\n"
-                    code += "        ),\n"
-                    code += "      ),\n"
+                    body_widget = {
+                        'type': 'Column',
+                        'children': components,
+                        'props': {}
+                    }
+
+                    if self.widget_generator.contains_widget_type(body_widget, 'Expanded'):
+                        code += "      body: " + \
+                            self.widget_generator.generate_widget(
+                                body_widget) + ",\n"
+                    else:
+                        # Multiple components - wrap in Column inside SingleChildScrollView
+                        code += "      body: SingleChildScrollView(\n"
+                        code += "        child: " + \
+                            self.widget_generator.generate_widget(
+                                body_widget) + ",\n"
+                        code += "      ),\n"
 
                 code += "    )"
         else:

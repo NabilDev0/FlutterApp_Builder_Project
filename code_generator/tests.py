@@ -110,6 +110,162 @@ class FlutterProjectGeneratorTests(TestCase):
 				self.assertIn("smokeapp/lib/utils/routes.dart", members)
 
 
+class WidgetGeneratorTests(TestCase):
+	def test_container_with_props_width_height(self):
+		"""Container should use width and height from props."""
+		from code_generator.generators.widget_generator import WidgetGenerator
+
+		generator = WidgetGenerator()
+		container_data = {
+			"type": "Container",
+			"props": {
+				"width": 200,
+				"height": 100,
+				"backgroundColor": "#FF0000",
+			},
+			"children": [],
+		}
+
+		code = generator.generate_container(container_data)
+		self.assertIn("width: 200.0", code)
+		self.assertIn("height: 100.0", code)
+		self.assertIn("Color(0xFFFF0000)", code)
+
+	def test_container_migration_from_layout(self):
+		"""Legacy layout w/h should still work as a fallback."""
+		from code_generator.generators.widget_generator import WidgetGenerator
+
+		generator = WidgetGenerator()
+		container_data = {
+			"type": "Container",
+			"layout": {"w": 150, "h": 75},
+			"props": {"backgroundColor": "#00FF00"},
+			"children": [],
+		}
+
+		code = generator.generate_container(container_data)
+		self.assertIn("width: 150.0", code)
+		self.assertIn("height: 75.0", code)
+		self.assertIn("Color(0xFF00FF00)", code)
+
+	def test_container_props_override_layout(self):
+		"""Props should win when both props and legacy layout dimensions exist."""
+		from code_generator.generators.widget_generator import WidgetGenerator
+
+		generator = WidgetGenerator()
+		container_data = {
+			"type": "Container",
+			"layout": {"w": 100, "h": 50},
+			"props": {
+				"width": 200,
+				"height": 150,
+				"backgroundColor": "#0000FF",
+			},
+			"children": [],
+		}
+
+		code = generator.generate_container(container_data)
+		self.assertIn("width: 200.0", code)
+		self.assertIn("height: 150.0", code)
+		self.assertNotIn("width: 100.0", code)
+		self.assertNotIn("height: 50.0", code)
+
+	def test_container_does_not_mutate_input(self):
+		"""Container layout fallback should not mutate the input data."""
+		from code_generator.generators.widget_generator import WidgetGenerator
+
+		generator = WidgetGenerator()
+		container_data = {
+			"type": "Container",
+			"layout": {"w": 100, "h": 50},
+			"props": {"backgroundColor": "#FF0000"},
+			"children": [],
+		}
+		original_props_keys = set(container_data["props"].keys())
+
+		code = generator.generate_container(container_data)
+
+		self.assertEqual(set(container_data["props"].keys()), original_props_keys)
+		self.assertNotIn("width", container_data["props"])
+		self.assertNotIn("height", container_data["props"])
+		self.assertIn("width: 100.0", code)
+		self.assertIn("height: 50.0", code)
+
+	def test_scaffold_body_with_expanded_is_not_scroll_wrapped(self):
+		"""Expanded must stay in a bounded Scaffold body."""
+		from code_generator.generators.widget_generator import WidgetGenerator
+
+		generator = WidgetGenerator()
+		scaffold_data = {
+			"type": "Scaffold",
+			"children": [
+				{
+					"type": "Column",
+					"children": [
+						{"type": "Text", "props": {"text": "Header"}},
+						{
+							"type": "Expanded",
+							"children": [
+								{"type": "Container", "props": {"backgroundColor": "#FF0000"}}
+							],
+						},
+					],
+				}
+			],
+		}
+
+		code = generator.generate_widget(scaffold_data)
+		self.assertIn("body: Column(", code)
+		self.assertIn("Expanded(", code)
+		self.assertNotIn("SingleChildScrollView", code)
+
+	def test_auto_scaffold_body_with_expanded_is_not_scroll_wrapped(self):
+		"""Auto-created Scaffolds should also keep Expanded bounded."""
+		from code_generator.generators.screen_generator import ScreenGenerator
+
+		generator = ScreenGenerator()
+		screen_data = {
+			"name": "Home",
+			"components": [
+				{
+					"type": "Column",
+					"children": [
+						{"type": "Text", "props": {"text": "Header"}},
+						{
+							"type": "Expanded",
+							"children": [
+								{"type": "Container", "props": {"backgroundColor": "#FF0000"}}
+							],
+						},
+					],
+				}
+			],
+		}
+
+		code = generator.generate_screen(screen_data)
+		self.assertIn("body: Column(", code)
+		self.assertIn("Expanded(", code)
+		self.assertNotIn("SingleChildScrollView", code)
+
+	def test_bottom_navigation_bar_honors_current_index_prop(self):
+		"""Explicit currentIndex should not be ignored."""
+		from code_generator.generators.widget_generator import WidgetGenerator
+
+		generator = WidgetGenerator()
+		bottom_nav_data = {
+			"type": "BottomNavigationBar",
+			"props": {"currentIndex": 1},
+			"items": [
+				{"label": "Home", "icon": "home", "route": "/"},
+				{"label": "Settings", "icon": "settings", "route": "/settings"},
+			],
+		}
+
+		code = generator.generate_widget(bottom_nav_data)
+		self.assertIn("currentIndex: 1", code)
+		self.assertNotIn("currentIndex: ()", code)
+
+
 class ProjectAPITests(TestCase):
 	def setUp(self):
 		super().setUp()
@@ -164,4 +320,3 @@ class ProjectAPITests(TestCase):
 		logs_response = self.client.get(logs_url)
 		self.assertEqual(logs_response.status_code, 200)
 		self.assertGreaterEqual(len(logs_response.json().get("logs", [])), 1)
-
