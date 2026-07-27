@@ -1,7 +1,12 @@
+import io
 import json
+import subprocess
+import threading
 import zipfile
+from collections import deque
 from tempfile import TemporaryDirectory
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -14,6 +19,7 @@ from rest_framework.test import APIClient
 from .models import Project
 from .serializers import ProjectCreateSerializer
 from .generators.project_generator import FlutterProjectGenerator
+from .utils.preview_server import PreviewServer
 
 
 def build_sample_json():
@@ -108,6 +114,201 @@ class FlutterProjectGeneratorTests(TestCase):
 				members = archive.namelist()
 				self.assertIn("smokeapp/lib/main.dart", members)
 				self.assertIn("smokeapp/lib/utils/routes.dart", members)
+
+
+class PreviewServerTests(TestCase):
+	def test_unknown_preview_status_is_idle(self):
+		result = PreviewServer().get_preview_status("not-started")
+
+		self.assertEqual(result["preview_status"], "idle")
+		self.assertFalse(result["ready"])
+		self.assertIsNone(result["preview_url"])
+
+	def test_start_preview_waits_for_compiled_app_without_experimental_hot_reload(self):
+		with TemporaryDirectory() as temp_dir:
+			project_path = Path(temp_dir)
+			(project_path / "pubspec.yaml").write_text(
+				"name: preview_test\n",
+				encoding="utf-8",
+			)
+
+			process = Mock()
+			process.poll.return_value = None
+			process.stdout = io.StringIO("")
+			process.stdin = Mock()
+
+			server = PreviewServer()
+			server.flutter_bin = "/usr/bin/flutter"
+			observed_statuses = []
+
+			def record_dependencies(*args, **kwargs):
+				observed_statuses.append(
+					server.get_preview_status("project-1")["preview_status"]
+				)
+
+			def record_compilation(*args, **kwargs):
+				observed_statuses.append(
+					server.get_preview_status("project-1")["preview_status"]
+				)
+
+			with (
+				patch("code_generator.utils.preview_server.subprocess.Popen", return_value=process) as popen,
+				patch.object(server, "_run_flutter_command", side_effect=record_dependencies),
+				patch.object(server, "_find_free_port", return_value=8123),
+				patch.object(
+					server,
+					"_wait_for_preview_ready",
+					side_effect=record_compilation,
+				) as wait_for_ready,
+			):
+				result = server.start_preview(
+					project_path,
+					project_id="project-1",
+				)
+
+			command = popen.call_args.args[0]
+			self.assertIn("--no-web-experimental-hot-reload", command)
+			self.assertIn("--no-pub", command)
+			self.assertEqual(popen.call_args.kwargs["stderr"], subprocess.STDOUT)
+			wait_for_ready.assert_called_once()
+			self.assertEqual(result["preview_url"], "http://localhost:8123")
+			self.assertEqual(result["preview_status"], "ready")
+			self.assertTrue(result["ready"])
+			self.assertEqual(
+				observed_statuses,
+				["getting_dependencies", "compiling"],
+			)
+			self.assertEqual(
+				server.get_preview_status("project-1")["preview_status"],
+				"ready",
+			)
+
+			server.stop_preview("project-1")
+			stopped = server.get_preview_status("project-1")
+			self.assertEqual(stopped["preview_status"], "stopped")
+			self.assertFalse(stopped["ready"])
+
+	def test_failed_preview_reports_error_status(self):
+		with TemporaryDirectory() as temp_dir:
+			project_path = Path(temp_dir)
+			(project_path / "pubspec.yaml").write_text(
+				"name: preview_test\n",
+				encoding="utf-8",
+			)
+
+			server = PreviewServer()
+			server.flutter_bin = "/usr/bin/flutter"
+			with (
+				patch.object(server, "_find_free_port", return_value=8123),
+				patch.object(
+					server,
+					"_run_flutter_command",
+					side_effect=RuntimeError("pub get failed"),
+				),
+				self.assertRaisesRegex(Exception, "pub get failed"),
+			):
+				server.start_preview(project_path, project_id="project-1")
+
+			result = server.get_preview_status("project-1")
+			self.assertEqual(result["preview_status"], "error")
+			self.assertFalse(result["ready"])
+			self.assertIn("pub get failed", result["error"])
+
+	def test_wait_for_preview_ready_checks_compiled_entrypoint(self):
+		server = PreviewServer()
+		process = Mock()
+		process.poll.return_value = None
+		output_lines = deque()
+		output_lock = threading.Lock()
+
+		with (
+			patch.object(
+				server,
+				"_is_preview_asset_ready",
+				side_effect=[False, True],
+			) as is_ready,
+			patch("code_generator.utils.preview_server.time.sleep"),
+		):
+			server._wait_for_preview_ready(
+				process,
+				8123,
+				output_lines,
+				output_lock,
+			)
+
+		self.assertEqual(is_ready.call_count, 2)
+
+	def test_update_screen_uses_hot_restart(self):
+		with TemporaryDirectory() as temp_dir:
+			project_path = Path(temp_dir)
+			(project_path / "lib" / "screens").mkdir(parents=True)
+
+			process = Mock()
+			process.poll.return_value = None
+			process.stdin = Mock()
+
+			server = PreviewServer()
+			server.active_servers["project-1"] = {
+				"process": process,
+				"port": 8123,
+				"project_path": str(project_path),
+				"last_active": 0,
+			}
+
+			with patch.object(
+				server.screen_generator,
+				"generate_screen",
+				return_value="// generated screen",
+			):
+				result = server.update_screen(
+					"project-1",
+					{"name": "Home", "components": []},
+				)
+
+			process.stdin.write.assert_called_once_with("R\n")
+			process.stdin.flush.assert_called_once()
+			self.assertEqual(
+				(project_path / "lib" / "screens" / "home_screen.dart").read_text(
+					encoding="utf-8",
+				),
+				"// generated screen",
+			)
+			self.assertEqual(result["reload_mode"], "hot_restart")
+
+	def test_preview_from_zip_replaces_stale_extracted_project(self):
+		with TemporaryDirectory() as temp_dir:
+			temp_path = Path(temp_dir)
+			extract_path = temp_path / "preview"
+			extract_path.mkdir()
+			(extract_path / "stale.txt").write_text("old", encoding="utf-8")
+
+			zip_path = temp_path / "project.zip"
+			with zipfile.ZipFile(zip_path, "w") as archive:
+				archive.writestr("flutter_app/pubspec.yaml", "name: flutter_app\n")
+				archive.writestr("flutter_app/lib/main.dart", "void main() {}\n")
+
+			server = PreviewServer()
+			with (
+				patch.object(server, "_stop_active_process") as stop_preview,
+				patch.object(
+					server,
+					"start_preview",
+					return_value={"status": "success"},
+				) as start_preview,
+			):
+				result = server.preview_from_zip(
+					zip_path,
+					extract_path,
+					project_id="project-1",
+				)
+
+			stop_preview.assert_called_once_with("project-1")
+			self.assertFalse((extract_path / "stale.txt").exists())
+			start_preview.assert_called_once_with(
+				extract_path / "flutter_app",
+				project_id="project-1",
+			)
+			self.assertEqual(result, {"status": "success"})
 
 
 class WidgetGeneratorTests(TestCase):
@@ -320,3 +521,42 @@ class ProjectAPITests(TestCase):
 		logs_response = self.client.get(logs_url)
 		self.assertEqual(logs_response.status_code, 200)
 		self.assertGreaterEqual(len(logs_response.json().get("logs", [])), 1)
+
+	def test_preview_status_endpoint_returns_client_ready_state(self):
+		project = Project.objects.create(
+			user=self.user,
+			name="Preview Project",
+			json_data=self.sample_json,
+			status="completed",
+		)
+		preview_server = Mock()
+		preview_server.get_preview_status.return_value = {
+			"status": "success",
+			"preview_status": "ready",
+			"ready": True,
+			"message": "Preview is ready to interact with",
+			"preview_url": "http://localhost:8080",
+			"port": 8080,
+			"error": None,
+			"started_at": "2026-07-27T06:00:00+00:00",
+			"updated_at": "2026-07-27T06:00:20+00:00",
+		}
+
+		with patch(
+			"code_generator.views.get_preview_server",
+			return_value=preview_server,
+		):
+			response = self.client.get(
+				reverse("project-preview-status", args=[project.id])
+			)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json()["preview_status"], "ready")
+		self.assertTrue(response.json()["ready"])
+		self.assertEqual(
+			response.json()["preview_url"],
+			"http://localhost:8080",
+		)
+		preview_server.get_preview_status.assert_called_once_with(
+			str(project.id)
+		)

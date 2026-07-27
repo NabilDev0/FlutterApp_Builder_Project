@@ -319,6 +319,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return Response({
                 'status': 'success',
                 'message': 'Preview server started successfully',
+                'preview_status': result['preview_status'],
+                'ready': result['ready'],
                 'preview_url': result['preview_url'],
                 'port': result['port']
             })
@@ -333,8 +335,18 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
             return Response({
                 'status': 'error',
+                'preview_status': 'error',
+                'ready': False,
                 'message': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['get'])
+    def preview_status(self, request, pk=None):
+        """Return the current launch state for one live preview."""
+        project = self.get_object()
+        preview_server = get_preview_server()
+        result = preview_server.get_preview_status(str(project.id))
+        return Response(result)
 
     @action(detail=True, methods=['post'])
     def stop_preview(self, request, pk=None):
@@ -358,12 +370,16 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
                 return Response({
                     'status': 'success',
-                    'message': 'Preview server stopped successfully'
+                    'preview_status': 'stopped',
+                    'ready': False,
+                    'message': 'Preview server stopped successfully',
                 })
             else:
                 return Response({
                     'status': 'info',
-                    'message': 'No active preview server found for this project'
+                    'preview_status': 'stopped',
+                    'ready': False,
+                    'message': 'No active preview server found for this project',
                 })
 
         except Exception as e:
@@ -389,7 +405,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
             return Response({
                 'status': 'success',
-                'message': f"Hot reloaded {result['reloaded_screen']}",
+                'message': f"Hot restarted {result['reloaded_screen']}",
+                'reload_mode': result['reload_mode'],
             })
 
         except Exception as e:
