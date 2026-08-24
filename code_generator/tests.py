@@ -16,9 +16,11 @@ from rest_framework.authtoken.models import Token
 from rest_framework.reverse import reverse
 from rest_framework.test import APIClient
 
-from .models import Project
+from .models import Project, Component, GenerationJob
+from .jobs import run_job
 from .serializers import ProjectCreateSerializer
 from .generators.project_generator import FlutterProjectGenerator
+from .generators.widget_generator import WidgetGenerator
 from .utils.preview_server import PreviewServer
 
 
@@ -467,6 +469,109 @@ class WidgetGeneratorTests(TestCase):
 		self.assertNotIn("currentIndex: ()", code)
 
 
+class ComponentAPITests(TestCase):
+	def setUp(self):
+		self.client = APIClient()
+		self.user = User.objects.create_user(
+			username="component-owner", password="strong-pass"
+		)
+		self.other_user = User.objects.create_user(
+			username="other-component-user", password="strong-pass"
+		)
+		token, _ = Token.objects.get_or_create(user=self.user)
+		self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+	def component_payload(self, **overrides):
+		payload = {
+			"name": "Reusable heading",
+			"description": "A heading used on several screens.",
+			"template_json": {
+				"type": "Padding",
+				"props": {"padding": 16},
+				"children": [{"type": "Text", "props": {"text": "Heading"}}],
+			},
+		}
+		payload.update(overrides)
+		return payload
+
+	def test_available_components_match_widget_generator_contract(self):
+		response = self.client.get(reverse("component-available"))
+
+		self.assertEqual(response.status_code, 200, response.json())
+		components = response.json()["components"]
+		by_type = {component["type"]: component for component in components}
+		self.assertEqual(set(by_type), set(WidgetGenerator().widget_rules))
+		self.assertEqual(by_type["Container"]["child_rule"], "child")
+		self.assertIn("width", {prop["name"] for prop in by_type["Container"]["props"]})
+		self.assertEqual(by_type["ListView"]["fields"][0]["name"], "itemTemplate")
+
+	def test_user_can_create_list_update_and_delete_own_custom_component(self):
+		create_response = self.client.post(
+			reverse("component-list"), self.component_payload(), format="json"
+		)
+
+		self.assertEqual(create_response.status_code, 201, create_response.json())
+		component_id = create_response.json()["id"]
+		self.assertEqual(create_response.json()["type"], "custom")
+		self.assertFalse(create_response.json()["is_public"])
+		self.assertEqual(create_response.json()["created_by"], self.user.id)
+
+		public_component = Component.objects.create(
+			name="Built in",
+			type="widget",
+			template_json={"type": "Text", "props": {"text": "Built in"}},
+			is_public=True,
+		)
+		list_response = self.client.get(reverse("component-list"))
+		self.assertEqual(list_response.status_code, 200, list_response.json())
+		self.assertEqual(
+			{item["id"] for item in list_response.json()},
+			{str(component_id), str(public_component.id)},
+		)
+
+		detail_url = reverse("component-detail", args=[component_id])
+		update_response = self.client.patch(
+			detail_url, {"name": "Updated heading"}, format="json"
+		)
+		self.assertEqual(update_response.status_code, 200, update_response.json())
+		self.assertEqual(update_response.json()["name"], "Updated heading")
+
+		delete_response = self.client.delete(detail_url)
+		self.assertEqual(delete_response.status_code, 204)
+		self.assertFalse(Component.objects.filter(id=component_id).exists())
+
+	def test_user_cannot_see_or_change_another_users_custom_component(self):
+		component = Component.objects.create(
+			name="Private card",
+			type="custom",
+			template_json={"type": "Card", "children": []},
+			is_public=False,
+			created_by=self.other_user,
+		)
+
+		self.assertEqual(
+			self.client.get(reverse("component-detail", args=[component.id])).status_code,
+			404,
+		)
+		self.assertEqual(
+			self.client.patch(
+				reverse("component-detail", args=[component.id]),
+				{"name": "Stolen"}, format="json",
+			).status_code,
+			404,
+		)
+
+	def test_custom_component_template_must_use_supported_generator_components(self):
+		response = self.client.post(
+			reverse("component-list"),
+			self.component_payload(template_json={"type": "UnsupportedWidget"}),
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 400)
+		self.assertIn("not supported by the code generator", str(response.json()))
+
+
 class ProjectAPITests(TestCase):
 	def setUp(self):
 		super().setUp()
@@ -502,8 +607,13 @@ class ProjectAPITests(TestCase):
 		project_id = create_response.json()["id"]
 
 		generate_url = reverse("project-generate", args=[project_id])
-		generate_response = self.client.post(generate_url)
-		self.assertEqual(generate_response.status_code, 200, generate_response.json())
+		with patch("code_generator.jobs._executor.submit"):
+			generate_response = self.client.post(generate_url)
+		self.assertEqual(generate_response.status_code, 202, generate_response.json())
+		job_id = generate_response.json()["id"]
+		self.assertEqual(generate_response.json()["status"], "queued")
+		run_job(job_id)
+		self.assertEqual(GenerationJob.objects.get(id=job_id).status, "completed")
 
 		project = Project.objects.get(id=project_id)
 		self.assertEqual(project.status, "completed")
@@ -511,6 +621,14 @@ class ProjectAPITests(TestCase):
 
 		generated_path = Path(settings.MEDIA_ROOT) / project.generated_file.name
 		self.assertTrue(generated_path.exists())
+		self.assertIn(str(project_id), project.generated_file.name)
+		self.assertIn(str(job_id), project.generated_file.name)
+
+		job_response = self.client.get(
+			reverse("project-job-status", args=[project_id, job_id])
+		)
+		self.assertEqual(job_response.status_code, 200, job_response.json())
+		self.assertEqual(job_response.json()["status"], "completed")
 
 		download_url = reverse("project-download", args=[project_id])
 		download_response = self.client.get(download_url)
@@ -560,3 +678,31 @@ class ProjectAPITests(TestCase):
 		preview_server.get_preview_status.assert_called_once_with(
 			str(project.id)
 		)
+
+	def test_project_api_rejects_unsupported_component_tree(self):
+		response = self.client.post(
+			reverse("project-list"),
+			{
+				"name": "Invalid app",
+				"json_data": {"screens": [{"name": "Home", "components": [{"type": "NotAWidget"}]}]},
+			},
+			format="json",
+		)
+		self.assertEqual(response.status_code, 400)
+		self.assertIn("not supported by the code generator", str(response.json()))
+
+	@override_settings(MAX_QUEUED_JOBS_PER_USER=1, MAX_ACTIVE_JOBS_PER_USER=1)
+	def test_generation_jobs_are_rate_limited_and_project_scoped(self):
+		project = Project.objects.create(
+			user=self.user, name="Queued", json_data=self.sample_json,
+		)
+		generate_url = reverse("project-generate", args=[project.id])
+		with patch("code_generator.jobs._executor.submit"):
+			first = self.client.post(generate_url)
+			second = self.client.post(generate_url)
+
+		self.assertEqual(first.status_code, 202, first.json())
+		self.assertEqual(second.status_code, 429, second.json())
+		jobs_response = self.client.get(reverse("project-jobs", args=[project.id]))
+		self.assertEqual(jobs_response.status_code, 200, jobs_response.json())
+		self.assertEqual(len(jobs_response.json()), 1)

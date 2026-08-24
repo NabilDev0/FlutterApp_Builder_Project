@@ -3,11 +3,16 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'your-secret-key-change-in-production'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    if os.environ.get('DJANGO_ENV', 'development') == 'production':
+        raise RuntimeError('DJANGO_SECRET_KEY must be set in production.')
+    SECRET_KEY = 'django-insecure-development-only-change-me'
 
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'true').lower() in ('1', 'true', 'yes')
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = [host.strip() for host in os.environ.get(
+    'DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if host.strip()]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -82,8 +87,26 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS Settings
-CORS_ALLOW_ALL_ORIGINS = True  # For development only
+CORS_ALLOWED_ORIGINS = [origin.strip() for origin in os.environ.get(
+    'CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173'
+).split(',') if origin.strip()]
 CORS_ALLOW_CREDENTIALS = True
+
+# These remain off locally, but default to safe values when DJANGO_DEBUG=false.
+SECURE_SSL_REDIRECT = os.environ.get(
+    'DJANGO_SECURE_SSL_REDIRECT', str(not DEBUG)
+).lower() in ('1', 'true', 'yes')
+SESSION_COOKIE_SECURE = os.environ.get(
+    'DJANGO_SESSION_COOKIE_SECURE', str(not DEBUG)
+).lower() in ('1', 'true', 'yes')
+CSRF_COOKIE_SECURE = os.environ.get(
+    'DJANGO_CSRF_COOKIE_SECURE', str(not DEBUG)
+).lower() in ('1', 'true', 'yes')
+SECURE_HSTS_SECONDS = int(os.environ.get(
+    'DJANGO_SECURE_HSTS_SECONDS', '31536000' if not DEBUG else '0'
+))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+SECURE_HSTS_PRELOAD = SECURE_HSTS_SECONDS > 0
 
 
 REST_FRAMEWORK = {
@@ -128,6 +151,9 @@ DART_SDK_PATH = os.environ.get('DART_SDK_PATH', '/usr/local/dart-sdk')
 # Project Generation Settings
 MAX_PROJECTS_PER_USER = 10
 PROJECT_RETENTION_DAYS = 30
+MAX_ACTIVE_JOBS_PER_USER = int(os.environ.get('MAX_ACTIVE_JOBS_PER_USER', '2'))
+MAX_QUEUED_JOBS_PER_USER = int(os.environ.get('MAX_QUEUED_JOBS_PER_USER', '3'))
+BACKGROUND_JOB_MAX_WORKERS = int(os.environ.get('BACKGROUND_JOB_MAX_WORKERS', '2'))
 
 # How long (seconds) an unused Flutter preview process is left running
 PREVIEW_IDLE_TIMEOUT = 10 * 60

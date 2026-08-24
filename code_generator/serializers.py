@@ -1,6 +1,7 @@
 from rest_framework import serializers
-from .models import Project, Screen, Component, GenerationLog
+from .models import Project, Screen, Component, GenerationLog, GenerationJob
 from django.contrib.auth.models import User
+from .component_catalog import validate_component_tree, validate_project_tree
 
 
 class ScreenSerializer(serializers.ModelSerializer):
@@ -20,7 +21,13 @@ class ProjectSerializer(serializers.ModelSerializer):
                   'created_at', 'updated_at', 'generated_file', 'apk_file', 
                   'preview_url', 'error_message']
         read_only_fields = ['id', 'status', 'created_at', 'updated_at', 
-                            'generated_file', 'apk_file', 'preview_url']
+                            'generated_file', 'apk_file', 'preview_url', 'error_message']
+
+    def validate_json_data(self, value):
+        error = validate_project_tree(value)
+        if error:
+            raise serializers.ValidationError(error)
+        return value
 
 
 class ProjectCreateSerializer(serializers.ModelSerializer):
@@ -30,22 +37,26 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
 
     # Validate the JSON structure
     def validate_json_data(self, value):
-        if not isinstance(value, dict):
-            raise serializers.ValidationError("json_data must be a dictionary")
-
-        if 'screen' not in value and 'screens' not in value:
-            raise serializers.ValidationError(
-                "json_data must contain 'screen' or 'screens' key")
-
+        error = validate_project_tree(value)
+        if error:
+            raise serializers.ValidationError(error)
         return value
 
 
 class ComponentSerializer(serializers.ModelSerializer):
+    created_by = serializers.PrimaryKeyRelatedField(read_only=True)
+
     class Meta:
         model = Component
         fields = ['id', 'name', 'type', 'description', 'thumbnail',
-                  'template_json', 'is_public', 'created_at']
-        read_only_fields = ['id', 'created_at']
+                  'template_json', 'is_public', 'created_by', 'created_at']
+        read_only_fields = ['id', 'type', 'is_public', 'created_by', 'created_at']
+
+    def validate_template_json(self, value):
+        error = validate_component_tree(value)
+        if error:
+            raise serializers.ValidationError(error)
+        return value
 
 
 class GenerationLogSerializer(serializers.ModelSerializer):
@@ -53,6 +64,13 @@ class GenerationLogSerializer(serializers.ModelSerializer):
         model = GenerationLog
         fields = ['id', 'step', 'status', 'message', 'timestamp']
         read_only_fields = ['id', 'timestamp']
+
+
+class GenerationJobSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GenerationJob
+        fields = ['id', 'job_type', 'status', 'error_message', 'result', 'created_at', 'started_at', 'completed_at']
+        read_only_fields = fields
 
 
 # Serializer for Flutter project generation request
@@ -68,6 +86,12 @@ class GenerateFlutterSerializer(serializers.Serializer):
                 "Either 'project_id' or 'json_data' must be provided"
             )
         return data
+
+    def validate_json_data(self, value):
+        error = validate_project_tree(value)
+        if error:
+            raise serializers.ValidationError(error)
+        return value
 
     # Validate Android package name format
     def validate_package_name(self, value):

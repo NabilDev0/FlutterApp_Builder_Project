@@ -8,7 +8,7 @@ This project is a Django REST API that accepts a JSON description of a mobile ap
 | :--- | :--- | :--- |
 | Django project config | `backend/settings.py`, `backend/urls.py` | Configures Django, REST Framework, Swagger docs, media storage, and routes `/api/` to the app. |
 | API app | `code_generator/` | Contains models, serializers, views, routes, tests, and generation logic. |
-| Project storage | `code_generator/models.py` | Stores projects, screens, reusable components, generated ZIP paths, APK paths, preview URLs, and generation logs. |
+| Project storage | `code_generator/models.py` | Stores projects, legacy screen records, reusable components, generated ZIP/APK paths, preview URLs, logs, and pollable jobs. |
 | API views | `code_generator/views.py` | Handles project CRUD, generation, download, preview, APK build, auth, and component endpoints. |
 | Flutter generation | `code_generator/generators/` | Converts project JSON into Flutter source files and packages them into a ZIP. |
 | Preview support | `code_generator/utils/preview_server.py` | Extracts a generated ZIP and runs `flutter run -d web-server`. |
@@ -26,6 +26,8 @@ The root URL config exposes the backend under `/api/`.
 | `GET /api/projects/` | List the authenticated user's projects. |
 | `POST /api/projects/` | Save a project JSON payload. |
 | `POST /api/projects/{id}/generate/` | Generate a Flutter project ZIP from saved JSON. |
+| `GET /api/projects/{id}/jobs/` | List the project's queued, running, completed, and failed jobs. |
+| `GET /api/projects/{id}/jobs/{job_id}/` | Poll one background job. |
 | `GET /api/projects/{id}/download/` | Download the generated Flutter ZIP. |
 | `POST /api/projects/{id}/start_preview/` | Start live Flutter web preview from the ZIP. |
 | `GET /api/projects/{id}/preview_status/` | Poll preview launch progress and readiness. |
@@ -87,11 +89,11 @@ Supported component names and props are listed in `README.md`.
 ## Save and Generate Flow
 
 1. The frontend sends project data to `POST /api/projects/`.
-2. `ProjectCreateSerializer` validates that `json_data` is a dictionary and contains `screen` or `screens`.
+2. `ProjectCreateSerializer` validates the complete widget tree against the generator contract.
 3. `ProjectViewSet.perform_create()` saves the project with the authenticated user.
-4. The frontend calls `POST /api/projects/{id}/generate/`.
-5. `ProjectViewSet.generate()` sets project status to `generating` and writes generation logs.
-6. `FlutterProjectGenerator.generate_project()` builds a temporary Flutter project folder under `MEDIA_ROOT/projects`.
+4. The frontend calls `POST /api/projects/{id}/generate/` and receives `202 Accepted` with a job ID.
+5. The frontend polls `GET /api/projects/{id}/jobs/{job_id}/` until the job is `completed` or `failed`.
+6. A bounded background worker builds the project under a unique project/job directory in `MEDIA_ROOT/projects`.
 7. The generated project folder is zipped.
 8. The temporary project folder is deleted.
 9. The project model stores the ZIP path in `generated_file` and sets status to `completed`.
@@ -109,6 +111,12 @@ Supported component names and props are listed in `README.md`.
 This is useful for quick frontend testing because no authenticated project record is required.
 
 ## How Flutter Code Generation Works
+
+## Source of Truth for Screens
+
+`Project.json_data` is the only source used for generation and preview updates.
+The current `Screen` model is legacy API storage and is not merged into a
+project's JSON. Reusable custom-screen templates are intentionally deferred.
 
 The generation pipeline has three layers:
 

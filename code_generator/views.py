@@ -1,5 +1,5 @@
 from rest_framework import viewsets, status
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiTypes
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.http import FileResponse
@@ -8,12 +8,15 @@ import os
 import uuid
 from pathlib import Path
 
-from .models import Project, Screen, Component, GenerationLog
+from django.db.models import Q
+
+from .models import Project, Screen, Component, GenerationLog, GenerationJob
 from .serializers import (
     ProjectSerializer, ProjectCreateSerializer,
     ScreenSerializer, ComponentSerializer,
-    GenerateFlutterSerializer, LoginSerializer
+    GenerateFlutterSerializer, LoginSerializer, GenerationJobSerializer
 )
+from .component_catalog import COMPONENT_CATALOG
 from .generators.project_generator import FlutterProjectGenerator
 from .utils.apk_builder import APKBuilder
 from .utils.preview_server import get_preview_server
@@ -24,11 +27,18 @@ from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny
 from django.contrib.auth import authenticate
 from .serializers import UserSerializer
+from .jobs import enqueue_project_job, JobRejected
 
 # API endpoints for managing projects
 
 
+@extend_schema_view(
+    generate=extend_schema(responses={202: GenerationJobSerializer}),
+    build_apk=extend_schema(responses={202: GenerationJobSerializer}),
+    start_preview=extend_schema(responses={202: GenerationJobSerializer}),
+)
 class ProjectViewSet(viewsets.ModelViewSet):
+    queryset = Project.objects.none()
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
@@ -57,79 +67,12 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def generate(self, request, pk=None):
-        # Generate Flutter project from saved project
         project = self.get_object()
-
-        # Update status
-        project.status = 'generating'
-        project.save()
-
         try:
-            # Create log
-            GenerationLog.objects.create(
-                project=project,
-                step='start',
-                status='info',
-                message='Starting project generation'
-            )
-
-            # Generate project
-            output_dir = Path(settings.MEDIA_ROOT) / 'projects'
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            app_name = project.name.lower().replace(' ', '_')
-            package_name = f"com.example.{app_name}"
-
-            generator = FlutterProjectGenerator(
-                output_dir=output_dir,
-                app_name=app_name,
-                package_name=package_name
-            )
-
-            GenerationLog.objects.create(
-                project=project,
-                step='generate_structure',
-                status='info',
-                message='Generating project structure'
-            )
-
-            zip_path = generator.generate_project(project.json_data)
-
-            # Save zip file reference
-            relative_path = os.path.relpath(zip_path, settings.MEDIA_ROOT)
-            project.generated_file = relative_path
-            project.status = 'completed'
-            project.save()
-
-            GenerationLog.objects.create(
-                project=project,
-                step='complete',
-                status='success',
-                message='Project generated successfully'
-            )
-
-            return Response({
-                'status': 'success',
-                'message': 'Project generated successfully',
-                'download_url': f'/api/projects/{project.id}/download/'
-            })
-
-        except Exception as e:
-            project.status = 'failed'
-            project.error_message = str(e)
-            project.save()
-
-            GenerationLog.objects.create(
-                project=project,
-                step='error',
-                status='error',
-                message=str(e)
-            )
-
-            return Response({
-                'status': 'error',
-                'message': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            job = enqueue_project_job(project, 'generate')
+        except JobRejected as error:
+            return Response({'detail': str(error)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        return Response(GenerationJobSerializer(job).data, status=status.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=['get'])
     def download(self, request, pk=None):
@@ -184,66 +127,11 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 'error': 'Project generation must be completed before building APK'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Store original status to restore on error
-        original_status = project.status
-        project.status = 'generating'
-        project.save()
-
         try:
-            GenerationLog.objects.create(
-                project=project,
-                step='build_apk_start',
-                status='info',
-                message='Starting APK build process'
-            )
-
-            # Get the ZIP file path
-            zip_path = os.path.join(
-                settings.MEDIA_ROOT, project.generated_file.name)
-
-            # Build APK
-            apk_output_dir = Path(settings.MEDIA_ROOT) / 'apks'
-            apk_output_dir.mkdir(parents=True, exist_ok=True)
-
-            builder = APKBuilder()
-            apk_path = builder.build_apk_from_zip(zip_path, apk_output_dir)
-
-            # Save APK file reference
-            relative_path = os.path.relpath(apk_path, settings.MEDIA_ROOT)
-            project.apk_file = relative_path
-            project.status = 'completed'
-            project.save()
-
-            GenerationLog.objects.create(
-                project=project,
-                step='build_apk_complete',
-                status='success',
-                message='APK built successfully'
-            )
-
-            return Response({
-                'status': 'success',
-                'message': 'APK built successfully',
-                'download_url': f'/api/projects/{project.id}/download_apk/'
-            })
-
-        except Exception as e:
-            # Restore original status - APK build failure shouldn't affect project generation status
-            project.status = original_status
-            project.error_message = str(e)
-            project.save()
-
-            GenerationLog.objects.create(
-                project=project,
-                step='build_apk_error',
-                status='error',
-                message=str(e)
-            )
-
-            return Response({
-                'status': 'error',
-                'message': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            job = enqueue_project_job(project, 'build_apk')
+        except JobRejected as error:
+            return Response({'detail': str(error)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        return Response(GenerationJobSerializer(job).data, status=status.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=['get'])
     def download_apk(self, request, pk=None):
@@ -270,7 +158,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def start_preview(self, request, pk=None):
-        """Start a live preview server for the generated Flutter project."""
+        """Queue a live preview server start and return its pollable job."""
         project = self.get_object()
 
         if not project.generated_file:
@@ -284,61 +172,30 @@ class ProjectViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            GenerationLog.objects.create(
-                project=project,
-                step='preview_start',
-                status='info',
-                message='Starting preview server'
-            )
+            job = enqueue_project_job(project, 'start_preview')
+        except JobRejected as error:
+            return Response({'detail': str(error)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        return Response(GenerationJobSerializer(job).data, status=status.HTTP_202_ACCEPTED)
 
-            # Get the ZIP file path
-            zip_path = os.path.join(
-                settings.MEDIA_ROOT, project.generated_file.name)
+    @extend_schema(operation_id='project_jobs_list', responses={200: GenerationJobSerializer(many=True)})
+    @action(detail=True, methods=['get'])
+    def jobs(self, request, pk=None):
+        project = self.get_object()
+        jobs = project.jobs.filter(user=request.user)
+        return Response(GenerationJobSerializer(jobs, many=True).data)
 
-            # Create temporary directory for preview
-            import tempfile
-            temp_dir = Path(settings.MEDIA_ROOT) / 'previews' / str(project.id)
-            temp_dir.mkdir(parents=True, exist_ok=True)
-
-            # Start preview server
-            preview_server = get_preview_server()
-            result = preview_server.preview_from_zip(
-                zip_path, temp_dir, project_id=str(project.id))
-
-            # Save preview URL
-            project.preview_url = result['preview_url']
-            project.save()
-
-            GenerationLog.objects.create(
-                project=project,
-                step='preview_started',
-                status='success',
-                message=f"Preview server started at {result['preview_url']}"
-            )
-
-            return Response({
-                'status': 'success',
-                'message': 'Preview server started successfully',
-                'preview_status': result['preview_status'],
-                'ready': result['ready'],
-                'preview_url': result['preview_url'],
-                'port': result['port']
-            })
-
-        except Exception as e:
-            GenerationLog.objects.create(
-                project=project,
-                step='preview_error',
-                status='error',
-                message=str(e)
-            )
-
-            return Response({
-                'status': 'error',
-                'preview_status': 'error',
-                'ready': False,
-                'message': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    @extend_schema(
+        operation_id='project_job_status_retrieve',
+        parameters=[OpenApiParameter('job_id', OpenApiTypes.UUID, OpenApiParameter.PATH)],
+        responses={200: GenerationJobSerializer},
+    )
+    @action(detail=True, methods=['get'], url_path='jobs/(?P<job_id>[^/.]+)')
+    def job_status(self, request, pk=None, job_id=None):
+        project = self.get_object()
+        job = project.jobs.filter(user=request.user, id=job_id).first()
+        if not job:
+            return Response({'detail': 'Job not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(GenerationJobSerializer(job).data)
 
     @action(detail=True, methods=['get'])
     def preview_status(self, request, pk=None):
@@ -452,6 +309,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
 
 class ScreenViewSet(viewsets.ModelViewSet):
+    queryset = Screen.objects.none()
     permission_classes = [IsAuthenticated]
     serializer_class = ScreenSerializer
 
@@ -469,15 +327,46 @@ class ScreenViewSet(viewsets.ModelViewSet):
 
 
 class ComponentViewSet(viewsets.ModelViewSet):
-    queryset = Component.objects.filter(is_public=True)
+    queryset = Component.objects.none()
+    permission_classes = [IsAuthenticated]
     serializer_class = ComponentSerializer
+
+    def get_queryset(self):
+        # The reusable library includes public templates plus the caller's
+        # private custom templates.  A custom component never leaks to another
+        # account, even if a client submits is_public=true.
+        return Component.objects.filter(
+            Q(is_public=True) | Q(created_by=self.request.user)
+        ).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(
+            created_by=self.request.user,
+            type='custom',
+            is_public=False,
+        )
+
+    def perform_update(self, serializer):
+        if serializer.instance.created_by_id != self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Only the owner can edit a custom component.')
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.created_by_id != self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Only the owner can delete a custom component.')
+        instance.delete()
+
+    @action(detail=False, methods=['get'])
+    def available(self, request):
+        """Return every building block the Flutter generator can emit."""
+        return Response({'components': COMPONENT_CATALOG})
 
     @action(detail=False, methods=['get'])
     def categories(self, request):
-        # Get component categories
-        categories = Component.objects.values_list(
-            'type', flat=True).distinct()
-        return Response({'categories': list(categories)})
+        categories = sorted({component['category'] for component in COMPONENT_CATALOG})
+        return Response({'categories': categories})
 
 # One-time Flutter project generation without saving
 
@@ -500,6 +389,12 @@ class GenerateFlutterView(viewsets.ViewSet):
 
         try:
             json_data = serializer.validated_data.get('json_data')
+            project_id = serializer.validated_data.get('project_id')
+            if project_id:
+                project = Project.objects.filter(id=project_id, user=request.user).first()
+                if not project:
+                    return Response({'detail': 'Project not found.'}, status=status.HTTP_404_NOT_FOUND)
+                json_data = project.json_data
             app_name = serializer.validated_data.get('app_name', 'my_app')
             package_name = serializer.validated_data.get(
                 'package_name', 'com.example.myapp')
@@ -533,6 +428,7 @@ class GenerateFlutterView(viewsets.ViewSet):
 
 
 class AuthViewSet(viewsets.ViewSet):
+    serializer_class = UserSerializer
     permission_classes = [AllowAny]
 
     @extend_schema(request=UserSerializer)
