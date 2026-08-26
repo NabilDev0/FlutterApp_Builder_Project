@@ -91,7 +91,6 @@ class Component(models.Model):
     thumbnail = models.ImageField(
         upload_to='components/', null=True, blank=True)
     template_json = models.JSONField()
-    is_public = models.BooleanField(default=True)
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

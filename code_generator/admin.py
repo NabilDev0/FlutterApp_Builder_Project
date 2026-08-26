@@ -52,8 +52,8 @@ class ScreenAdmin(admin.ModelAdmin):
 
 @admin.register(Component)
 class ComponentAdmin(admin.ModelAdmin):
-    list_display = ['name', 'type', 'is_public', 'created_by', 'created_at']
-    list_filter = ['type', 'is_public', 'created_at']
+    list_display = ['name', 'type', 'created_by', 'created_at']
+    list_filter = ['type', 'created_at']
     search_fields = ['name', 'description']
     readonly_fields = ['id', 'created_at']
 
@@ -66,7 +66,7 @@ class ComponentAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
         ('Visibility', {
-            'fields': ('is_public', 'created_by')
+            'fields': ('created_by',)
         }),
         ('Timestamps', {
             'fields': ('created_at',),

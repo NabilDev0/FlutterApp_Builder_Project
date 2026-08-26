@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status
-from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiTypes
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter
+from drf_spectacular.types import OpenApiTypes
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.http import FileResponse
@@ -7,8 +8,6 @@ from django.conf import settings
 import os
 import uuid
 from pathlib import Path
-
-from django.db.models import Q
 
 from .models import Project, Screen, Component, GenerationLog, GenerationJob
 from .serializers import (
@@ -33,9 +32,23 @@ from .jobs import enqueue_project_job, JobRejected
 
 
 @extend_schema_view(
-    generate=extend_schema(responses={202: GenerationJobSerializer}),
-    build_apk=extend_schema(responses={202: GenerationJobSerializer}),
-    start_preview=extend_schema(responses={202: GenerationJobSerializer}),
+    list=extend_schema(summary='List user projects.'),
+    create=extend_schema(summary='Create a project from validated builder JSON.'),
+    retrieve=extend_schema(summary='Get one of user projects.'),
+    update=extend_schema(summary='Replace a project and its builder JSON.'),
+    partial_update=extend_schema(summary='Update selected project fields.'),
+    destroy=extend_schema(summary='Delete a project and its generated files.'),
+    generate=extend_schema(summary='Queue Flutter ZIP generation.', responses={202: GenerationJobSerializer}),
+    download=extend_schema(summary='Download the latest generated Flutter ZIP.'),
+    logs=extend_schema(summary='List generation and preview logs for this project.'),
+    build_apk=extend_schema(summary='Queue a release APK build from the generated ZIP.', responses={202: GenerationJobSerializer}),
+    download_apk=extend_schema(summary='Download the latest built release APK.'),
+    start_preview=extend_schema(summary='Queue startup of a live Flutter web preview.', responses={202: GenerationJobSerializer}),
+    preview_status=extend_schema(summary='Get the current live-preview readiness state.'),
+    stop_preview=extend_schema(summary='Stop this project’s live preview process.'),
+    update_preview=extend_schema(summary='Regenerate one preview screen and hot restart.'),
+    preview_heartbeat=extend_schema(summary='Keep an active preview from being reaped for idleness.'),
+    active_previews=extend_schema(summary='List active preview processes visible to this server.'),
 )
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.none()
@@ -177,7 +190,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return Response({'detail': str(error)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
         return Response(GenerationJobSerializer(job).data, status=status.HTTP_202_ACCEPTED)
 
-    @extend_schema(operation_id='project_jobs_list', responses={200: GenerationJobSerializer(many=True)})
+    @extend_schema(operation_id='project_jobs_list', summary='List this project’s background jobs.', responses={200: GenerationJobSerializer(many=True)})
     @action(detail=True, methods=['get'])
     def jobs(self, request, pk=None):
         project = self.get_object()
@@ -186,6 +199,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     @extend_schema(
         operation_id='project_job_status_retrieve',
+        summary='Get one background job’s current status.',
         parameters=[OpenApiParameter('job_id', OpenApiTypes.UUID, OpenApiParameter.PATH)],
         responses={200: GenerationJobSerializer},
     )
@@ -308,6 +322,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
 # API endpoints for managing screens
 
 
+@extend_schema_view(
+    list=extend_schema(summary='List legacy screen records for user projects.'),
+    create=extend_schema(summary='Create a legacy screen record; project JSON remains authoritative.'),
+    retrieve=extend_schema(summary='Get one legacy screen record.'),
+    update=extend_schema(summary='Replace a legacy screen record.'),
+    partial_update=extend_schema(summary='Update selected legacy screen fields.'),
+    destroy=extend_schema(summary='Delete a legacy screen record.'),
+)
 class ScreenViewSet(viewsets.ModelViewSet):
     queryset = Screen.objects.none()
     permission_classes = [IsAuthenticated]
@@ -326,24 +348,28 @@ class ScreenViewSet(viewsets.ModelViewSet):
 # API endpoints for component library
 
 
+@extend_schema_view(
+    list=extend_schema(summary='List user private custom components.'),
+    create=extend_schema(summary='Save a private reusable custom component.'),
+    retrieve=extend_schema(summary='Get a single component template.'),
+    update=extend_schema(summary='Replace one of user custom component templates.'),
+    partial_update=extend_schema(summary='Update one of user custom component templates.'),
+    destroy=extend_schema(summary='Delete one of user custom component templates.'),
+    available=extend_schema(summary='List every Flutter building block supported by the generator.'),
+    categories=extend_schema(summary='List categories for supported building blocks.'),
+)
 class ComponentViewSet(viewsets.ModelViewSet):
     queryset = Component.objects.none()
     permission_classes = [IsAuthenticated]
     serializer_class = ComponentSerializer
 
     def get_queryset(self):
-        # The reusable library includes public templates plus the caller's
-        # private custom templates.  A custom component never leaks to another
-        # account, even if a client submits is_public=true.
-        return Component.objects.filter(
-            Q(is_public=True) | Q(created_by=self.request.user)
-        ).order_by('-created_at')
+        return Component.objects.filter(created_by=self.request.user).order_by('-created_at')
 
     def perform_create(self, serializer):
         serializer.save(
             created_by=self.request.user,
             type='custom',
-            is_public=False,
         )
 
     def perform_update(self, serializer):
@@ -377,7 +403,8 @@ class GenerateFlutterView(viewsets.ViewSet):
         request=GenerateFlutterSerializer,
         responses={
             200: {'description': 'A zip file containing the generated Flutter project'}},
-        description="Generate a Flutter project directly from a JSON configuration without saving it to the database."
+        summary='Generate and download a Flutter ZIP without saving a project.',
+        description='Provide validated JSON or an existing project_id that you own.'
     )
     @action(detail=False, methods=['post'])
     def quick_generate(self, request):
@@ -427,6 +454,11 @@ class GenerateFlutterView(viewsets.ViewSet):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@extend_schema_view(
+    register=extend_schema(summary='Register an account and receive its authentication token.'),
+    login=extend_schema(summary='Authenticate and receive the account token.'),
+    logout=extend_schema(summary='Delete the current authentication token.'),
+)
 class AuthViewSet(viewsets.ViewSet):
     serializer_class = UserSerializer
     permission_classes = [AllowAny]

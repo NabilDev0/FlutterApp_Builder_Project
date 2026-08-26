@@ -513,20 +513,14 @@ class ComponentAPITests(TestCase):
 		self.assertEqual(create_response.status_code, 201, create_response.json())
 		component_id = create_response.json()["id"]
 		self.assertEqual(create_response.json()["type"], "custom")
-		self.assertFalse(create_response.json()["is_public"])
-		self.assertEqual(create_response.json()["created_by"], self.user.id)
+		self.assertNotIn("is_public", create_response.json())
+		self.assertEqual(create_response.json()["created_by"], self.user.pk)
 
-		public_component = Component.objects.create(
-			name="Built in",
-			type="widget",
-			template_json={"type": "Text", "props": {"text": "Built in"}},
-			is_public=True,
-		)
 		list_response = self.client.get(reverse("component-list"))
 		self.assertEqual(list_response.status_code, 200, list_response.json())
 		self.assertEqual(
 			{item["id"] for item in list_response.json()},
-			{str(component_id), str(public_component.id)},
+			{str(component_id)},
 		)
 
 		detail_url = reverse("component-detail", args=[component_id])
@@ -545,7 +539,6 @@ class ComponentAPITests(TestCase):
 			name="Private card",
 			type="custom",
 			template_json={"type": "Card", "children": []},
-			is_public=False,
 			created_by=self.other_user,
 		)
 

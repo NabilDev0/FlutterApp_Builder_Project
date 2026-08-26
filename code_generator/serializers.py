@@ -49,8 +49,8 @@ class ComponentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Component
         fields = ['id', 'name', 'type', 'description', 'thumbnail',
-                  'template_json', 'is_public', 'created_by', 'created_at']
-        read_only_fields = ['id', 'type', 'is_public', 'created_by', 'created_at']
+                  'template_json', 'created_by', 'created_at']
+        read_only_fields = ['id', 'type', 'created_by', 'created_at']
 
     def validate_template_json(self, value):
         error = validate_component_tree(value)
@@ -80,12 +80,12 @@ class GenerateFlutterSerializer(serializers.Serializer):
     app_name = serializers.CharField(max_length=100, required=False)
     package_name = serializers.CharField(max_length=255, required=False)
 
-    def validate(self, data):
-        if not data.get('project_id') and not data.get('json_data'):
+    def validate(self, attrs):
+        if not attrs.get('project_id') and not attrs.get('json_data'):
             raise serializers.ValidationError(
                 "Either 'project_id' or 'json_data' must be provided"
             )
-        return data
+        return attrs
 
     def validate_json_data(self, value):
         error = validate_project_tree(value)
