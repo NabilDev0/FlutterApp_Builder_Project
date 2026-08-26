@@ -8,7 +8,8 @@ For deployment, set `DJANGO_ENV=production`, `DJANGO_SECRET_KEY`,
 `DJANGO_DEBUG=false`, `DJANGO_ALLOWED_HOSTS`, and `CORS_ALLOWED_ORIGINS`.
 
 Project generation, APK builds, and preview starts return `202 Accepted`.
-Poll `GET /api/projects/{id}/jobs/{job_id}/` until the returned job completes.
+Poll `GET /api/projects/{id}/jobs/{job_id}/` until the returned job completes;
+for preview startup, poll `/api/projects/{id}/preview_status/` for detailed phases.
 
 ## Requirements
 

@@ -25,15 +25,15 @@ The root URL config exposes the backend under `/api/`.
 | `POST /api/auth/logout/` | Delete the current user's auth token. |
 | `GET /api/projects/` | List the authenticated user's projects. |
 | `POST /api/projects/` | Save a project JSON payload. |
-| `POST /api/projects/{id}/generate/` | Generate a Flutter project ZIP from saved JSON. |
+| `POST /api/projects/{id}/generate/` | Queue Flutter ZIP generation; returns `202` and a job. |
 | `GET /api/projects/{id}/jobs/` | List the project's queued, running, completed, and failed jobs. |
 | `GET /api/projects/{id}/jobs/{job_id}/` | Poll one background job. |
 | `GET /api/projects/{id}/download/` | Download the generated Flutter ZIP. |
-| `POST /api/projects/{id}/start_preview/` | Start live Flutter web preview from the ZIP. |
+| `POST /api/projects/{id}/start_preview/` | Queue live-preview startup; returns `202` and a job. |
 | `GET /api/projects/{id}/preview_status/` | Poll preview launch progress and readiness. |
 | `POST /api/projects/{id}/stop_preview/` | Stop the running preview. |
-| `POST /api/projects/{id}/update_preview/` | Rewrite one screen Dart file and hot restart preview. |
-| `POST /api/projects/{id}/build_apk/` | Build a release APK from the generated ZIP. |
+| `POST /api/projects/{id}/update_preview/` | Temporarily rewrite one preview screen and hot restart. |
+| `POST /api/projects/{id}/build_apk/` | Queue a release APK build; returns `202` and a job. |
 | `GET /api/projects/{id}/download_apk/` | Download the built APK. |
 | `POST /api/generate/quick_generate/` | Generate and download a ZIP directly from JSON without saving a project. |
 
@@ -114,9 +114,10 @@ This is useful for quick frontend testing because no authenticated project recor
 
 ## Source of Truth for Screens
 
-`Project.json_data` is the only source used for generation and preview updates.
-The current `Screen` model is legacy API storage and is not merged into a
-project's JSON. Reusable custom-screen templates are intentionally deferred.
+`Project.json_data` is the only source used for project generation. The current
+`update_preview` endpoint is an intentionally temporary preview-only edit: it
+does not write the submitted screen back to `Project.json_data`. The `Screen`
+model is legacy storage and is not merged into a project's JSON.
 
 The generation pipeline has three layers:
 
@@ -297,27 +298,32 @@ class AppRoutes {
 
 Live preview is implemented in `code_generator/utils/preview_server.py`.
 
-1. The project must already have a generated ZIP.
-2. `start_preview` extracts the ZIP under `MEDIA_ROOT/previews/{project_id}`.
-3. It finds the generated Flutter project folder.
-4. It runs `flutter pub get`.
-5. It starts:
+1. `POST /api/projects/{id}/start_preview/` queues startup and returns `202 Accepted` with a `GenerationJob`.
+2. The worker extracts the generated ZIP under `MEDIA_ROOT/previews/{project_id}`.
+3. It finds the generated Flutter project folder and runs `flutter pub get`.
+4. It starts:
 
 ```bash
 flutter run --no-pub --no-web-experimental-hot-reload \
   -d web-server --web-port <port> --web-hostname 0.0.0.0
 ```
 
-6. The backend drains Flutter output so the process cannot block on full output pipes.
-7. It waits until `main.dart.js` is available. The port opens before Flutter compilation finishes, and returning the URL at that earlier point can leave the browser on a white page.
-8. The backend stores the preview process, port, project path, and last activity time in memory.
-9. The API returns a URL like `http://localhost:8080`.
+5. The backend drains Flutter output so the process cannot block on full output pipes.
+6. It waits until `main.dart.js` is available. The port opens before Flutter compilation finishes, and returning the URL at that earlier point can leave the browser on a white page.
+7. The completed job contains a URL like `http://localhost:8080`.
 
 Experimental web hot reload is disabled because its injected browser client can crash before the Flutter app mounts on the tested Linux Flutter installation. Preview updates use Flutter hot restart instead.
 
 ### Preview Readiness
 
-While `POST /api/projects/{id}/start_preview/` is running, the frontend can poll:
+First poll the returned job until it is `completed` or `failed`:
+
+```http
+GET /api/projects/{id}/jobs/{job_id}/
+Authorization: Token <token>
+```
+
+While that job is running, the frontend can also poll the detailed preview phase:
 
 ```http
 GET /api/projects/{id}/preview_status/
@@ -357,7 +363,7 @@ The client should treat `ready` as the authoritative flag. Poll every second whi
 Preview update flow:
 
 1. Frontend calls `POST /api/projects/{id}/update_preview/` with a `screen` object.
-2. The backend regenerates only that screen Dart file.
+2. The backend regenerates only that extracted preview screen file; the database JSON is unchanged.
 3. It sends `R` to the Flutter process stdin.
 4. Flutter hot restarts the running preview.
 
@@ -422,6 +428,9 @@ export JAVA_HOME=/path/to/java
 | Limitation | Details |
 | :--- | :--- |
 | Original JSON is not embedded in ZIP | The database stores `project.json_data`, but the generated Flutter ZIP does not include a separate JSON file with the original project schema. |
+| Preview state is process-local | Preview status, process handles, and hot-restart input are kept in memory, so multi-worker deployments need shared preview coordination. |
+| Preview job and phase polling are separate | Startup is tracked by `GenerationJob`; detailed `preview_status` is a separate process-local state machine. |
+| Preview updates are temporary | `update_preview` changes the extracted Dart file only; regenerate or restart from a ZIP to discard it. |
 | Preview folders can accumulate | Stopping preview kills the process but does not delete extracted preview folders. |
 | Quick generate files can accumulate | Quick-generated ZIPs are stored under `MEDIA_ROOT/temp` and are not automatically cleaned here. |
 | Flutter/Android versions matter | APK build depends on the host Flutter, Java, Gradle, and Android SDK setup. |
