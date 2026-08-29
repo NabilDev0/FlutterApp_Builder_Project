@@ -4,6 +4,25 @@ import zipfile
 from pathlib import Path
 from .screen_generator import ScreenGenerator
 
+# Bump this when generated infrastructure changes without requiring different project JSON.
+GENERATOR_CONTRACT_FILENAME = '.draggable-generator-version'
+GENERATOR_CONTRACT_VERSION = 'first-frame-ready-v1'
+
+
+def is_generated_archive_current(zip_path):
+    """Reject artifacts whose generated runtime predates the current contract."""
+    try:
+        with zipfile.ZipFile(zip_path) as archive:
+            markers = [
+                name for name in archive.namelist()
+                if Path(name).name == GENERATOR_CONTRACT_FILENAME
+            ]
+            if len(markers) != 1:
+                return False
+            return archive.read(markers[0]).decode('utf-8').strip() == GENERATOR_CONTRACT_VERSION
+    except (FileNotFoundError, OSError, UnicodeDecodeError, zipfile.BadZipFile):
+        return False
+
 
 class FlutterProjectGenerator:
 
@@ -27,6 +46,10 @@ class FlutterProjectGenerator:
             self.generate_web_files(project_path)
             self.generate_config_files(project_path)
             self.generate_test_files(project_path)
+            (project_path / GENERATOR_CONTRACT_FILENAME).write_text(
+                GENERATOR_CONTRACT_VERSION,
+                encoding='utf-8',
+            )
 
             zip_path = self.create_zip(project_path)
             return zip_path
@@ -77,6 +100,7 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:
@@ -94,10 +118,15 @@ flutter:
             screens = [{'name': 'Home', 'is_home': True, 'components': []}]
 
         main_dart = f"""import 'package:flutter/material.dart';
+import 'utils/live_preview_ready.dart';
 import 'utils/routes.dart';
 
 void main() {{
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
+  WidgetsBinding.instance.addPostFrameCallback((_) {{
+    NotifyLivePreviewReady();
+  }});
 }}
 
 class MyApp extends StatelessWidget {{
@@ -119,6 +148,38 @@ class MyApp extends StatelessWidget {{
 }}
 """
         (project_path / 'lib/main.dart').write_text(main_dart, encoding='utf-8')
+
+        # The preview server can only prove that compiled assets are being served.
+        # The browser receives this signal after Flutter has produced its first frame.
+        live_preview_ready = """export 'live_preview_ready_stub.dart'
+    if (dart.library.html) 'live_preview_ready_web.dart';
+"""
+        (project_path / 'lib/utils/live_preview_ready.dart').write_text(
+            live_preview_ready,
+            encoding='utf-8',
+        )
+
+        live_preview_ready_stub = """void NotifyLivePreviewReady() {}
+"""
+        (project_path / 'lib/utils/live_preview_ready_stub.dart').write_text(
+            live_preview_ready_stub,
+            encoding='utf-8',
+        )
+
+        live_preview_ready_web = """import 'dart:js_interop';
+import 'package:web/web.dart' as web;
+
+void NotifyLivePreviewReady() {
+  web.window.parent?.postMessage(
+    'flutter-preview-ready'.toJS,
+    '*'.toJS,
+  );
+}
+"""
+        (project_path / 'lib/utils/live_preview_ready_web.dart').write_text(
+            live_preview_ready_web,
+            encoding='utf-8',
+        )
 
         # Generate screens
         for screen in screens:

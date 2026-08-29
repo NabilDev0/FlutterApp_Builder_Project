@@ -299,7 +299,7 @@ class AppRoutes {
 Live preview is implemented in `code_generator/utils/preview_server.py`.
 
 1. `POST /api/projects/{id}/start_preview/` queues startup and returns `202 Accepted` with a `GenerationJob`.
-2. The worker extracts the generated ZIP under `MEDIA_ROOT/previews/{project_id}`.
+2. The worker checks the generated ZIP's contract marker and regenerates stale or missing artifacts before extracting them under `MEDIA_ROOT/previews/{project_id}`.
 3. It finds the generated Flutter project folder and runs `flutter pub get`.
 4. It starts:
 
@@ -309,8 +309,8 @@ flutter run --no-pub --no-web-experimental-hot-reload \
 ```
 
 5. The backend drains Flutter output so the process cannot block on full output pipes.
-6. It waits until `main.dart.js` is available. The port opens before Flutter compilation finishes, and returning the URL at that earlier point can leave the browser on a white page.
-7. The completed job contains a URL like `http://localhost:8080`.
+6. It waits for the complete JavaScript bootstrap chain: `main.dart.js`, `main_module.bootstrap.js`, and `web_entrypoint.dart.js`. Every file must have a JavaScript MIME type because the development server returns `index.html` with HTTP 200 for module paths that do not exist yet.
+7. It reports `serving` with a URL like `http://localhost:8080`. The generated Flutter app then notifies its iframe parent after its first frame; only that browser signal proves a screen is visible.
 
 Experimental web hot reload is disabled because its injected browser client can crash before the Flutter app mounts on the tested Linux Flutter installation. Preview updates use Flutter hot restart instead.
 
@@ -354,11 +354,11 @@ Example response:
 | `starting` | Show that the generated ZIP is being prepared. |
 | `getting_dependencies` | Show dependency installation progress. |
 | `compiling` | Keep the loading state visible. Do not mount the iframe yet. |
-| `ready` | Use `preview_url`; the iframe is ready for interaction. |
+| `serving` | Mount the iframe with `preview_url`, then wait for the generated Flutter app's first-frame message before marking the preview interactive. |
 | `error` | Stop polling and show `error` or `message`. |
 | `stopped` | Show the preview as inactive. |
 
-The client should treat `ready` as the authoritative flag. Poll every second while startup is pending, stop polling for `ready`, `error`, or an explicitly requested `stopped` state, and only assign the iframe `src` when `ready === true`.
+The client should treat `serving` as the authoritative server-asset state. Poll every second while startup is pending, stop polling for `serving`, `error`, or an explicitly requested `stopped` state, and assign the iframe `src` only after `serving` returns its URL. The generated Flutter app posts `flutter-preview-ready` after its first frame; that message is the authoritative interactive state.
 
 Preview update flow:
 

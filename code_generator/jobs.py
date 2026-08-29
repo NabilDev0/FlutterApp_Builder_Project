@@ -14,7 +14,10 @@ from django.core.files.storage import default_storage
 from django.db import transaction
 from django.utils import timezone
 
-from .generators.project_generator import FlutterProjectGenerator
+from .generators.project_generator import (
+    FlutterProjectGenerator,
+    is_generated_archive_current,
+)
 from .component_catalog import validate_project_tree
 from .models import GenerationJob, GenerationLog, Project
 from .utils.apk_builder import APKBuilder
@@ -138,8 +141,21 @@ def _build_apk(job):
 
 def _start_preview(job):
     project = Project.objects.get(id=job.project_id)
-    if not project.generated_file:
-        raise ValueError('Project must be generated before starting a preview.')
+    zip_path = (
+        Path(settings.MEDIA_ROOT) / project.generated_file.name
+        if project.generated_file
+        else None
+    )
+    if zip_path is None or not is_generated_archive_current(zip_path):
+        GenerationLog.objects.create(
+            project=project,
+            step='preview_regenerate',
+            status='info',
+            message='Regenerating a stale Flutter artifact before preview startup',
+        )
+        _generate(job)
+        project.refresh_from_db()
+
     GenerationLog.objects.create(project=project, step='preview_start', status='info', message='Starting preview server')
     zip_path = Path(settings.MEDIA_ROOT) / project.generated_file.name
     temp_dir = Path(settings.MEDIA_ROOT) / 'previews' / str(project.id)

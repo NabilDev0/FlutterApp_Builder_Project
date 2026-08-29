@@ -6,7 +6,7 @@ import zipfile
 from collections import deque
 from tempfile import TemporaryDirectory
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -19,7 +19,12 @@ from rest_framework.test import APIClient
 from .models import Project, Component, GenerationJob
 from .jobs import run_job
 from .serializers import ProjectCreateSerializer
-from .generators.project_generator import FlutterProjectGenerator
+from .generators.project_generator import (
+	GENERATOR_CONTRACT_FILENAME,
+	GENERATOR_CONTRACT_VERSION,
+	FlutterProjectGenerator,
+	is_generated_archive_current,
+)
 from .generators.widget_generator import WidgetGenerator
 from .utils.preview_server import PreviewServer
 
@@ -116,6 +121,25 @@ class FlutterProjectGeneratorTests(TestCase):
 				members = archive.namelist()
 				self.assertIn("smokeapp/lib/main.dart", members)
 				self.assertIn("smokeapp/lib/utils/routes.dart", members)
+				self.assertIn("smokeapp/lib/utils/live_preview_ready.dart", members)
+				self.assertIn("smokeapp/lib/utils/live_preview_ready_web.dart", members)
+				contract_path = f"smokeapp/{GENERATOR_CONTRACT_FILENAME}"
+				self.assertIn(contract_path, members)
+				main_dart = archive.read("smokeapp/lib/main.dart").decode("utf-8")
+				web_ready = archive.read(
+					"smokeapp/lib/utils/live_preview_ready_web.dart"
+				).decode("utf-8")
+
+				self.assertIn("NotifyLivePreviewReady", main_dart)
+				self.assertIn("addPostFrameCallback", main_dart)
+				self.assertIn("package:web/web.dart", web_ready)
+				self.assertIn("flutter-preview-ready", web_ready)
+				self.assertEqual(
+					archive.read(contract_path).decode("utf-8"),
+					GENERATOR_CONTRACT_VERSION,
+				)
+
+			self.assertTrue(is_generated_archive_current(zip_path))
 
 
 class PreviewServerTests(TestCase):
@@ -174,15 +198,15 @@ class PreviewServerTests(TestCase):
 			self.assertEqual(popen.call_args.kwargs["stderr"], subprocess.STDOUT)
 			wait_for_ready.assert_called_once()
 			self.assertEqual(result["preview_url"], "http://localhost:8123")
-			self.assertEqual(result["preview_status"], "ready")
-			self.assertTrue(result["ready"])
+			self.assertEqual(result["preview_status"], "serving")
+			self.assertFalse(result["ready"])
 			self.assertEqual(
 				observed_statuses,
 				["getting_dependencies", "compiling"],
 			)
 			self.assertEqual(
 				server.get_preview_status("project-1")["preview_status"],
-				"ready",
+				"serving",
 			)
 
 			server.stop_preview("project-1")
@@ -239,6 +263,52 @@ class PreviewServerTests(TestCase):
 			)
 
 		self.assertEqual(is_ready.call_count, 2)
+
+	def test_preview_assets_require_the_complete_javascript_bootstrap_chain(self):
+		responses = []
+		for _ in range(3):
+			response = MagicMock()
+			response.status = 200
+			response.headers.get_content_type.return_value = "application/javascript"
+			response.read.return_value = b"x"
+			response.__enter__.return_value = response
+			responses.append(response)
+
+		with patch(
+			"code_generator.utils.preview_server.urllib.request.urlopen",
+			side_effect=responses,
+		) as urlopen:
+			is_ready = PreviewServer()._is_preview_asset_ready(8123)
+
+		self.assertTrue(is_ready)
+		self.assertEqual(
+			[call.args[0].full_url for call in urlopen.call_args_list],
+			[
+				"http://127.0.0.1:8123/main.dart.js",
+				"http://127.0.0.1:8123/main_module.bootstrap.js",
+				"http://127.0.0.1:8123/web_entrypoint.dart.js",
+			],
+		)
+
+	def test_preview_assets_reject_html_fallback_for_missing_module(self):
+		javascript_response = MagicMock()
+		javascript_response.status = 200
+		javascript_response.headers.get_content_type.return_value = "application/javascript"
+		javascript_response.read.return_value = b"x"
+		javascript_response.__enter__.return_value = javascript_response
+		html_response = MagicMock()
+		html_response.status = 200
+		html_response.headers.get_content_type.return_value = "text/html"
+		html_response.read.return_value = b"<"
+		html_response.__enter__.return_value = html_response
+
+		with patch(
+			"code_generator.utils.preview_server.urllib.request.urlopen",
+			side_effect=[javascript_response, javascript_response, html_response],
+		):
+			is_ready = PreviewServer()._is_preview_asset_ready(8123)
+
+		self.assertFalse(is_ready)
 
 	def test_update_screen_uses_hot_restart(self):
 		with TemporaryDirectory() as temp_dir:
@@ -633,7 +703,50 @@ class ProjectAPITests(TestCase):
 		self.assertEqual(logs_response.status_code, 200)
 		self.assertGreaterEqual(len(logs_response.json().get("logs", [])), 1)
 
-	def test_preview_status_endpoint_returns_client_ready_state(self):
+	def test_preview_job_regenerates_a_stale_generated_archive(self):
+		project = Project.objects.create(
+			user=self.user,
+			name="Stale Preview Project",
+			json_data=self.sample_json,
+			status="completed",
+		)
+		stale_relative_path = f"projects/{project.id}/stale/project.zip"
+		stale_path = Path(settings.MEDIA_ROOT) / stale_relative_path
+		stale_path.parent.mkdir(parents=True)
+		with zipfile.ZipFile(stale_path, "w") as archive:
+			archive.writestr("old_app/pubspec.yaml", "name: old_app\n")
+		project.generated_file = stale_relative_path
+		project.save(update_fields=["generated_file"])
+
+		job = GenerationJob.objects.create(
+			project=project,
+			user=self.user,
+			job_type="start_preview",
+		)
+		preview_server = Mock()
+		preview_server.preview_from_zip.return_value = {
+			"preview_url": "http://localhost:8080",
+			"preview_status": "serving",
+			"ready": False,
+			"port": 8080,
+		}
+
+		with patch("code_generator.jobs.get_preview_server", return_value=preview_server):
+			run_job(str(job.id))
+
+		job.refresh_from_db()
+		project.refresh_from_db()
+		generated_path = Path(settings.MEDIA_ROOT) / project.generated_file.name
+		self.assertEqual(job.status, "completed")
+		self.assertNotEqual(project.generated_file.name, stale_relative_path)
+		self.assertTrue(is_generated_archive_current(generated_path))
+		preview_server.preview_from_zip.assert_called_once_with(
+			generated_path,
+			Path(settings.MEDIA_ROOT) / "previews" / str(project.id),
+			project_id=str(project.id),
+		)
+
+	def test_preview_status_endpoint_returns_server_asset_state(self):
 		project = Project.objects.create(
 			user=self.user,
 			name="Preview Project",
@@ -643,9 +756,9 @@ class ProjectAPITests(TestCase):
 		preview_server = Mock()
 		preview_server.get_preview_status.return_value = {
 			"status": "success",
-			"preview_status": "ready",
-			"ready": True,
-			"message": "Preview is ready to interact with",
+			"preview_status": "serving",
+			"ready": False,
+			"message": "Compiled Flutter assets are available; waiting for the browser to render.",
 			"preview_url": "http://localhost:8080",
 			"port": 8080,
 			"error": None,
@@ -662,8 +775,8 @@ class ProjectAPITests(TestCase):
 			)
 
 		self.assertEqual(response.status_code, 200)
-		self.assertEqual(response.json()["preview_status"], "ready")
-		self.assertTrue(response.json()["ready"])
+		self.assertEqual(response.json()["preview_status"], "serving")
+		self.assertFalse(response.json()["ready"])
 		self.assertEqual(
 			response.json()["preview_url"],
 			"http://localhost:8080",

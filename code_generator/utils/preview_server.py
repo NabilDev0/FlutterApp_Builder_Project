@@ -18,6 +18,16 @@ from ..generators.screen_generator import ScreenGenerator
 PREVIEW_IDLE_TIMEOUT = getattr(settings, 'PREVIEW_IDLE_TIMEOUT', 10 * 60)
 # How often the reaper thread checks for idle previews, in seconds.
 PREVIEW_REAP_INTERVAL = getattr(settings, 'PREVIEW_REAP_INTERVAL', 60)
+PREVIEW_REQUIRED_JAVASCRIPT_ASSETS = (
+    'main.dart.js',
+    'main_module.bootstrap.js',
+    'web_entrypoint.dart.js',
+)
+PREVIEW_JAVASCRIPT_CONTENT_TYPES = {
+    'application/javascript',
+    'application/x-javascript',
+    'text/javascript',
+}
 
 
 class PreviewServer:
@@ -175,16 +185,16 @@ class PreviewServer:
             preview_url = self._build_preview_url(port)
             self._set_preview_state(
                 tracking_id,
-                'ready',
-                'Preview is ready to interact with',
+                'serving',
+                'Compiled Flutter assets are available; waiting for the browser to render.',
                 preview_url=preview_url,
                 port=port,
             )
 
             return {
                 'status': 'success',
-                'preview_status': 'ready',
-                'ready': True,
+                'preview_status': 'serving',
+                'ready': False,
                 'preview_url': preview_url,
                 'port': port,
                 'project_id': tracking_id
@@ -218,7 +228,7 @@ class PreviewServer:
             self.preview_states[project_id] = {
                 'status': 'success',
                 'preview_status': preview_status,
-                'ready': preview_status == 'ready',
+                'ready': False,
                 'message': message,
                 'preview_url': preview_url,
                 'port': port,
@@ -301,15 +311,24 @@ class PreviewServer:
         raise Exception(message)
 
     def _is_preview_asset_ready(self, port):
-        request = urllib.request.Request(
-            f"http://127.0.0.1:{port}/main.dart.js",
-            headers={'Cache-Control': 'no-cache'},
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=2) as response:
-                return response.status == 200 and bool(response.read(1))
-        except (urllib.error.URLError, TimeoutError, OSError):
-            return False
+        for asset_name in PREVIEW_REQUIRED_JAVASCRIPT_ASSETS:
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{port}/{asset_name}",
+                headers={'Cache-Control': 'no-cache'},
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=2) as response:
+                    content_type = response.headers.get_content_type()
+                    if (
+                        response.status != 200
+                        or content_type not in PREVIEW_JAVASCRIPT_CONTENT_TYPES
+                        or not response.read(1)
+                    ):
+                        return False
+            except (urllib.error.URLError, TimeoutError, OSError):
+                return False
+
+        return True
 
     def _format_output(self, output_lines, output_lock):
         with output_lock:
