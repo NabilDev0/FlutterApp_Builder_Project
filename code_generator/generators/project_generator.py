@@ -6,7 +6,7 @@ from .screen_generator import ScreenGenerator
 
 # Bump this when generated infrastructure changes without requiring different project JSON.
 GENERATOR_CONTRACT_FILENAME = '.draggable-generator-version'
-GENERATOR_CONTRACT_VERSION = 'first-frame-ready-v1'
+GENERATOR_CONTRACT_VERSION = 'first-frame-ready-v2'
 
 
 def is_generated_archive_current(zip_path):
@@ -117,6 +117,16 @@ flutter:
         if not screens or (len(screens) == 1 and not screens[0]):
             screens = [{'name': 'Home', 'is_home': True, 'components': []}]
 
+        home_screen = next(
+            (screen for screen in screens if screen.get('is_home') is True),
+            screens[0],
+        )
+        home_class_name = self.screen_generator.to_class_name(
+            home_screen.get('name', 'Home'))
+        initial_route = home_screen.get('route') or f'/{home_class_name.lower()}'
+        initial_route = str(initial_route).replace(
+            "\\", "\\\\").replace("'", "\\'").replace('$', '\\$')
+
         main_dart = f"""import 'package:flutter/material.dart';
 import 'utils/live_preview_ready.dart';
 import 'utils/routes.dart';
@@ -142,7 +152,7 @@ class MyApp extends StatelessWidget {{
         useMaterial3: true,
       ),
       routes: AppRoutes.routes,
-      initialRoute: '/',
+      initialRoute: '{initial_route}',
     );
   }}
 }}

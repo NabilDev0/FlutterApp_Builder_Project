@@ -417,6 +417,8 @@ class WidgetGenerator:
         """Generate action chain for buttons and interactive elements."""
         if not actions:
             return ""
+        if not isinstance(actions, list):
+            raise WidgetValidationError("Widget actions must be a list.")
 
         current_action = actions[0]
         remaining_actions = actions[1:]
@@ -617,14 +619,16 @@ class WidgetGenerator:
         props = data.get('props', {})
         items = data.get('items', [])
 
-        if not items:
-            return "Container()"
+        if len(items) < 2:
+            raise WidgetValidationError(
+                "BottomNavigationBar requires at least two items.")
 
         code = "BottomNavigationBar(\n"
 
         # Current index - explicit prop wins, otherwise infer from route
         if props.get('currentIndex') is not None:
-            code += f"  currentIndex: {props['currentIndex']},\n"
+            current_index = max(0, min(props['currentIndex'], len(items) - 1))
+            code += f"  currentIndex: {current_index},\n"
         else:
             code += "  currentIndex: () {\n"
             code += "    final currentRoute = ModalRoute.of(context)?.settings.name;\n"
@@ -747,12 +751,14 @@ class WidgetGenerator:
             code += f"  leading: Icon(Icons.{icon}),\n"
 
         # Title
-        title = props.get('title', 'List Item').replace("'", "\\'")
+        title = props.get('title', 'List Item').replace(
+            "'", "\\'").replace('$', '\\$')
         code += f"  title: Text('{title}'),\n"
 
         # Subtitle
         if props.get('subtitle'):
-            subtitle = props.get('subtitle', '').replace("'", "\\'")
+            subtitle = props.get('subtitle', '').replace(
+                "'", "\\'").replace('$', '\\$')
             code += f"  subtitle: Text('{subtitle}'),\n"
 
         # Trailing icon

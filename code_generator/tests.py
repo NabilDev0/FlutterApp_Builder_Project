@@ -25,7 +25,7 @@ from .generators.project_generator import (
 	FlutterProjectGenerator,
 	is_generated_archive_current,
 )
-from .generators.widget_generator import WidgetGenerator
+from .generators.widget_generator import WidgetGenerator, WidgetValidationError
 from .utils.preview_server import PreviewServer
 
 
@@ -101,8 +101,70 @@ class ProjectSerializerTests(TestCase):
 		self.assertFalse(serializer.is_valid())
 		self.assertIn("json_data", serializer.errors)
 
+	def test_project_create_serializer_rejects_object_actions(self):
+		payload = build_sample_json()
+		payload["screens"][0]["components"] = [
+			{
+				"type": "ListTile",
+				"props": {
+					"title": "Profile",
+					"actions": {"type": "navigate", "route": "/profile"},
+				},
+			}
+		]
+		serializer = ProjectCreateSerializer(
+			data={"name": "Broken Actions", "description": "", "json_data": payload}
+		)
+
+		self.assertFalse(serializer.is_valid())
+		self.assertIn("json_data", serializer.errors)
+		self.assertIn("props.actions must be a list", str(serializer.errors["json_data"]))
+
+	def test_project_create_serializer_requires_two_bottom_navigation_items(self):
+		payload = build_sample_json()
+		payload["screens"][0]["components"] = [
+			{
+				"type": "BottomNavigationBar",
+				"props": {"currentIndex": 0},
+				"items": [{"label": "Home", "icon": "home", "route": "/"}],
+			}
+		]
+		serializer = ProjectCreateSerializer(
+			data={"name": "Broken Navigation", "description": "", "json_data": payload}
+		)
+
+		self.assertFalse(serializer.is_valid())
+		self.assertIn("at least two entries", str(serializer.errors["json_data"]))
+
 
 class FlutterProjectGeneratorTests(TestCase):
+	def test_bottom_navigation_bar_rejects_fewer_than_two_items(self):
+		with self.assertRaisesRegex(
+			WidgetValidationError,
+			"requires at least two items",
+		):
+			WidgetGenerator().generate_widget(
+				{
+					"type": "BottomNavigationBar",
+					"props": {"currentIndex": 0},
+					"items": [{"label": "Home", "icon": "home", "route": "/"}],
+				}
+			)
+
+	def test_list_tile_escapes_dart_interpolation_markers(self):
+		code = WidgetGenerator().generate_widget(
+			{
+				"type": "ListTile",
+				"props": {
+					"title": "Total $27.40",
+					"subtitle": "1 x $11.90",
+				},
+			}
+		)
+
+		self.assertIn("Text('Total \\$27.40')", code)
+		self.assertIn("Text('1 x \\$11.90')", code)
+
 	def test_generate_project_creates_zip_with_main_dart(self):
 		sample_json = build_sample_json()
 
@@ -140,6 +202,58 @@ class FlutterProjectGeneratorTests(TestCase):
 				)
 
 			self.assertTrue(is_generated_archive_current(zip_path))
+
+	def test_generate_project_uses_declared_home_screen_route(self):
+		sample_json = build_sample_json()
+		sample_json["screens"] = [
+			{
+				"id": "login",
+				"name": "Login",
+				"route": "/login",
+				"is_home": False,
+				"components": [],
+			},
+			{
+				"id": "dashboard",
+				"name": "Dashboard",
+				"route": "/dashboard",
+				"is_home": True,
+				"components": [],
+			},
+		]
+
+		with TemporaryDirectory() as temp_dir:
+			zip_path = FlutterProjectGenerator(
+				output_dir=temp_dir,
+				app_name="HomeRouteApp",
+				package_name="com.example.homerouteapp",
+			).generate_project(sample_json)
+
+			with zipfile.ZipFile(zip_path) as archive:
+				main_dart = archive.read(
+					"homerouteapp/lib/main.dart"
+				).decode("utf-8")
+
+			self.assertIn("initialRoute: '/dashboard'", main_dart)
+
+	def test_generate_project_falls_back_to_first_screen_route(self):
+		sample_json = build_sample_json()
+		sample_json["screens"][0]["is_home"] = False
+		sample_json["screens"][0]["route"] = "/welcome"
+
+		with TemporaryDirectory() as temp_dir:
+			zip_path = FlutterProjectGenerator(
+				output_dir=temp_dir,
+				app_name="FallbackRouteApp",
+				package_name="com.example.fallbackrouteapp",
+			).generate_project(sample_json)
+
+			with zipfile.ZipFile(zip_path) as archive:
+				main_dart = archive.read(
+					"fallbackrouteapp/lib/main.dart"
+				).decode("utf-8")
+
+			self.assertIn("initialRoute: '/welcome'", main_dart)
 
 
 class PreviewServerTests(TestCase):

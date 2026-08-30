@@ -86,7 +86,7 @@ COMPONENT_CATALOG = [
         prop("selectedItemColor", "hex_color"), prop("unselectedItemColor", "hex_color"),
     ], "fields": [
         prop("items", "navigation_item[]", required=True,
-             description="Each item supports label, icon, and route."),
+             description="At least two items are required. Each item supports label, icon, and route."),
     ]},
     {"type": "Drawer", "category": "screen", "child_rule": "special", "props": [
         prop("header", "object", description="Supports title, subtitle, and backgroundColor."),
@@ -132,8 +132,24 @@ def validate_component_tree(node, path="template_json"):
 
     if component_type == "BottomNavigationBar":
         items = node.get("items")
-        if not isinstance(items, list) or not items:
-            return f"{path}.items must be a non-empty list for BottomNavigationBar."
+        if not isinstance(items, list) or len(items) < 2:
+            return f"{path}.items must contain at least two entries for BottomNavigationBar."
+        current_index = node.get("props", {}).get("currentIndex", 0)
+        if (
+            not isinstance(current_index, int)
+            or isinstance(current_index, bool)
+            or current_index < 0
+            or current_index >= len(items)
+        ):
+            return f"{path}.props.currentIndex must reference an existing BottomNavigationBar item."
+
+    props = node.get("props", {})
+    if not isinstance(props, dict):
+        return f"{path}.props must be an object."
+    if component_type in {"Button", "ListTile"}:
+        actions = props.get("actions", [])
+        if not isinstance(actions, list):
+            return f"{path}.props.actions must be a list for {component_type}."
 
     return None
 
